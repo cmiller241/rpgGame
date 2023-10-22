@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <title>RPG Demo - 20231021</title>
+        <meta name="description" content="RPG Demo" />
+        <link rel="stylesheet" href="css/style.css" />
+    </head>
+    <body>
+        <center>
+            <canvas></canvas>
+        </center>
+    </body>
+    <script src="js/Character.js"></script>
+    <script src="js/KeyBoardState.js"></script>
+    <script src="js/LoadHandler.js"></script>
+    <script src="js/MapObject.js"></script>
+    <script src="js/Map.js"></script>
+    <script src="js/Main.js"></script>>
+    <script>
+        window.onload = () => {
+            var canvas = document.querySelector("canvas");
+            const game = new Game(canvas);
+            game.start();
+        }
+    </script>
+</html>
