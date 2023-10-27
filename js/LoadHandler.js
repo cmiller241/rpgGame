@@ -20,8 +20,10 @@ class LoadHandler {
             const loadPromises = imageFiles.map((file) => this.loadImage(file.src));
             await Promise.all(loadPromises);
             console.log("All images loaded successfully");
+            return Promise.resolve();
         } catch (error) {
             console.error("Error loading images:", error);
+            return Promise.reject(error);
         }
     }
 
