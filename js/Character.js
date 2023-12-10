@@ -10,6 +10,9 @@ class Character {
         this.moveLeft = false;
         this.moveUp = false;
         this.moveDown = false;
+        this.sprite = "Cody";
+        this.direction = "Down";
+        this.action = "Standing";
         this.jump = false;
         this.jumpForce = -8;
         this.gravity = 0.5;
@@ -23,5 +26,24 @@ class Character {
         this.frame = 0;
         this.speedLimit = 5;
         this.isOnGround = true;
+        this.lastFrameUpdate = 0;
+    }
+
+    update() {
+        const now = Date.now();
+
+        if (!this.lastFrameUpdate) {
+            this.lastFrameUpdate = now;
+        }
+
+        if (now - this.lastFrameUpdate >= 200) {
+            this.frame++;
+            this.lastFrameUpdate = now;
+        }
+
+        if (this.frame >= spriteMap[this.sprite][this.action][this.direction].length) {
+            this.frame = 0;
+            //console.log("The frame has been zeroed out");
+        }
     }
 }
