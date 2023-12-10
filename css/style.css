@@ -6,3 +6,6 @@ body {
     height:100%;
     background:#fff
 }
+canvas {
+    image-rendering:pixelated;
+}

@@ -25,7 +25,7 @@ class KeyboardState {
         this.keys[event.code] = false;
     }
 
-    isKeyPressed(keyCode) {
+    isDown(keyCode) {
         return this.keys[keyCode] || false;
     }
 }
