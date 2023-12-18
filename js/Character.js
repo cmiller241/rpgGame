@@ -4,6 +4,7 @@ class Character {
         this.x = x;
         this.y = y;
         this.z = 0;
+        this.base=96;
         this.width = width;
         this.height = height;
         this.moveRight = false;
