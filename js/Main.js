@@ -97,20 +97,14 @@ class Game {
         this.shadowBufferTemplateCanvas.height = 96;
         this.shadowBufferTemplateCtx = this.shadowBufferTemplateCanvas.getContext("2d");
 
-        //Shadow for Particular Object Buffer
-        this.shadowBufferFinalCanvas = document.createElement("canvas"); 
-        this.shadowBufferFinalCanvas.width = 96;
-        this.shadowBufferFinalCanvas.height = 96;
-        this.shadowBufferFinalCtx = this.shadowBufferFinalCanvas.getContext("2d");
-
         //Bind resizeCanvas method to this instance (so "this" doesn't putz out)
         this.resizeCanvas = this.resizeCanvas.bind(this);
 
         //Shadow
-        this.lightSource = {x: 200, y: -2000, size: -32};  
+        this.lightSource = {x: 200, y: -2000, size: -32, moveX: 0, moveY: 0};  
 
         this.characters = [];
-        this.characters[0] = new Character(0,0,100,32,64);
+        this.characters[0] = new Character(0,200,200,32,64);
         //this.characters[1] = new Character(1,200,400,32,64);
     }
 
@@ -149,9 +143,8 @@ class Game {
            ])
         ]).then(() => {
             console.log("All assets loaded successfully!");
-            //setInterval(() => this.update(),1000/60);
             this.update();
-            this.render();
+            //this.render();
         }).catch((error) => {
             console.log("Error loading assets", error);
         })
@@ -159,57 +152,41 @@ class Game {
 
     update() {
 
-        this.characters.forEach(character => character.update()); //Update all characters' frames
+        const mapArray = this.map.mapArray;
+        this.characters.forEach(character => character.update(mapArray)); //Update all characters' frames
 
         const player = this.characters[0];
 
         //Player movement
-        this.characters[0].action = "Standing";
-        if (keyBoardState.isDown("ArrowLeft")) {
-            player.x -= 5;
-            player.direction = "Left";
-            player.action= "Walking";
-        } 
-        if (keyBoardState.isDown("ArrowRight")) {
-            player.x += 5;
-            player.direction = "Right";
-            player.action = "Walking";
-        } 
-        if (keyBoardState.isDown("ArrowUp")) {
-            player.y -= 5;
-            player.direction = "Up";
-            player.action= "Walking";
-        } 
-        if (keyBoardState.isDown("ArrowDown")) {
-            player.y += 5;
-            player.direction = "Down";
-            player.action= "Walking";
-        }
+        //this.characters[0].action = "Standing";
+        player.moveLeft = keyBoardState.isDown("ArrowLeft") ? true:false;
+        player.moveRight = keyBoardState.isDown("ArrowRight") ? true:false;
+        player.moveUp = keyBoardState.isDown("ArrowUp") ? true: false;
+        player.moveDown = keyBoardState.isDown("ArrowDown") ? true : false;
+
         if (keyBoardState.isDown("KeyP")) {
             this.scale += 0.1;
             this.resizeCanvas();
-            console.log("The scale is " + this.scale);
         }
         if (keyBoardState.isDown("KeyL")) {
             this.scale -= 0.1;
             if (this.scale < 0.1) this.scale = 0.1;
             this.resizeCanvas();
-            console.log("The scale is " + this.scale);
         }
         if (keyBoardState.isDown("KeyT")) {
-            this.lightSource.y -= 20;
+            this.lightSource.y -= 50;
             this.putShadowsOnTemplate();
         }
         if (keyBoardState.isDown("KeyY")) {
-            this.lightSource.y += 20;
+            this.lightSource.y += 50;
             this.putShadowsOnTemplate();
         }   
         if (keyBoardState.isDown("KeyH")) {
-            this.lightSource.x += 20;
+            this.lightSource.x += 50;
             this.putShadowsOnTemplate();
         }
         if (keyBoardState.isDown("KeyG")) {
-            this.lightSource.x -= 20;
+            this.lightSource.x -= 50;
             this.putShadowsOnTemplate();
         }
         if (keyBoardState.isDown("KeyJ")) {
@@ -231,18 +208,23 @@ class Game {
         this.treeSurface.clearRect(0,0,this.treeOffScreenCanvas.width,this.treeOffScreenCanvas.height);
         const twoPi = 2 * Math.PI;
         const lengthFactor = twoPi / this.treeSections.length;
+        const treeTime = this.treeTime
+        const treeAnimationDuration = this.treeAnimationDuration;
+        const treeAmplitude = this.treeAmplitude;
         const timeFactor = this.treeTime / this.treeAnimationDuration * twoPi;
         const treeImage = this.loadHandler.getImage('img/tree.png');
+        const treeSections = this.treeSections;
+        const treeSurface = this.treeSurface;
 
         let currentX = 0;
 
-        this.treeSections.forEach((section, index) => {
-            const scaleFactor = this.treeAmplitude * Math.sin(lengthFactor * index - timeFactor);   
+        treeSections.forEach((section, index) => {
+            const scaleFactor = treeAmplitude * Math.sin(lengthFactor * index - timeFactor);   
             const width = section.width + scaleFactor;
             const x = currentX;
             currentX += width;
 
-            this.treeSurface.drawImage(
+            treeSurface.drawImage(
                 treeImage,
                 160 + section.x,
                 section.y,
@@ -255,12 +237,11 @@ class Game {
             );
         });
 
-        this.treeTime = (this.treeTime + 16) % this.treeAnimationDuration;
+        this.treeTime = (treeTime + 16) % treeAnimationDuration;
     }
 
     putShadowsOnTemplate() {
 
-        console.log("lightSource.x is " + this.lightSource.x + " and lightSource.y is " + this.lightSource.y + " and lightSource.size is " + this.lightSource.size);
         this.shadowBufferTemplateCtx.clearRect(0,0,this.shadowBufferTemplateCanvas.width,this.shadowBufferTemplateCanvas.height);
 
         let angle = Math.atan2(
@@ -278,28 +259,26 @@ class Game {
         let str = {x: tr.x + this.lightSource.size * Math.cos(angle), y: tr.y + this.lightSource.size * Math.sin(angle)};
         let stl = {x: tl.x + this.lightSource.size * Math.cos(angle), y: tl.y + this.lightSource.size * Math.sin(angle)};
 
+        this.lightSource.moveX = (sbr.x - br.x);
+        this.lightSource.moveY = 0;//(sbr.y - br.y);
         this.shadowBufferTemplateCtx.beginPath();
 
         if (sbr.x < br.x && sbr.y < br.y) {
             this.shadowBufferTemplateCtx.moveTo(sbl.x, sbl.y);
             this.shadowBufferTemplateCtx.lineTo(stl.x, stl.y);
-            this.shadowBufferTemplateCtx.lineTo(str.x, str.y);
-            this.shadowBufferTemplateCtx.lineTo(tr.x,tr.y);
-            this.shadowBufferTemplateCtx.lineTo(tl.x,br.y);
+            this.shadowBufferTemplateCtx.lineTo(tl.x, stl.y);
             this.shadowBufferTemplateCtx.lineTo(bl.x,bl.y);
         } else if (sbr.x > br.x && sbr.y < br.y) {
             this.shadowBufferTemplateCtx.moveTo(sbr.x, sbr.y);
             this.shadowBufferTemplateCtx.lineTo(str.x, str.y);
-            this.shadowBufferTemplateCtx.lineTo(stl.x, stl.y);
-            this.shadowBufferTemplateCtx.lineTo(tl.x,tl.y);
-            this.shadowBufferTemplateCtx.lineTo(tr.x,bl.y);
+            this.shadowBufferTemplateCtx.lineTo(tr.x, str.y);
             this.shadowBufferTemplateCtx.lineTo(br.x,br.y);
         } else if (sbr.x < br.x && sbr.y > br.y) {
             this.shadowBufferTemplateCtx.moveTo(sbr.x, sbr.y);
             this.shadowBufferTemplateCtx.lineTo(sbl.x, sbl.y);
             this.shadowBufferTemplateCtx.lineTo(stl.x,stl.y);
             this.shadowBufferTemplateCtx.lineTo(tl.x,tl.y);
-            this.shadowBufferTemplateCtx.lineTo(bl.x,tr.y);
+            this.shadowBufferTemplateCtx.lineTo(bl.x,bl.y);
             this.shadowBufferTemplateCtx.lineTo(br.x,br.y);
         } else if (sbr.x > br.x && sbr.y > br.y) {
             this.shadowBufferTemplateCtx.moveTo(sbr.x, sbr.y);
@@ -318,7 +297,15 @@ class Game {
 
     render() {
         this.moveLeaves();
-        // Clear the ground offscreen canvas
+
+        const tileWidth = this.tileWidth;
+        const tileHeight = this.tileHeight;
+        const mapArray = this.map.mapArray;
+        const groundSprites = this.loadHandler.getImage('img/sprites2.png')
+        const groundScreenCtx = this.groundScreenCtx;
+        const objectScreenCtx = this.objectScreenCtx;
+
+        // Clear the offscreen canvases
         this.groundScreenCtx.clearRect(0, 0, this.groundOffScreenCanvas.width, this.groundOffScreenCanvas.height);
         this.shadowScreenCtx.clearRect(0, 0, this.shadowOffScreenCanvas.width, this.shadowOffScreenCanvas.height);
         this.objectScreenCtx.clearRect(0, 0, this.objectOffScreenCanvas.width, this.objectOffScreenCanvas.height);
@@ -341,109 +328,46 @@ class Game {
                 var xC = x + firstTileX;                            //yC and xC are coordinates plus camera
                 if (xC < 0) continue;                               //If xC < 0, no reason to render
 
-                var z = this.map.mapArray[yC][xC].z;
-                var sprite = this.map.mapArray[yC][xC].v;           //Get sprite based on map location & camera
+                var z = mapArray[yC][xC].z;
+                var sprite = mapArray[yC][xC].v;           //Get sprite based on map location & camera
+                var xTileWidthOffsetX = x*tileWidth - offsetX;
+                var yTileHeightOffsetY = y*tileHeight - offsetY;
+                
+                var showTile = true;                                //If the tiles below are higher than current tile, let's not show the current tile. 
+                if (mapArray[yC+1]?.[xC]?.z + 32 <= z ) showTile = false;
+                if (mapArray[yC+2]?.[xC]?.z + 64 <= z ) showTile = false;
+                if (mapArray[yC+3]?.[xC]?.z + 96 <= z ) showTile = false;
 
-                var isLowerAdjacentTile = false;
-
-                for (var outY = -1; outY <= 1; outY++) {
-                    for (var outX = -1; outX <= 1; outX++) {
-                        if (outY === 0 && outX === 0) continue;
-                        if (yC + outY < 0 || yC + outY >= this.map.mapArray.length || xC + outX < 0 || xC + outX >= this.map.mapArray[0].length) {
-                            continue;
-                        }
-                        if (this.map.mapArray[yC + outY][xC + outX].z > z) {
-                            isLowerAdjacentTile = true;
-                            break;
-                        }
-                        if (isLowerAdjacentTile) break;
-                    }
-                }
-
-                if (isLowerAdjacentTile) {              //If ground is elevated, we need to delete what may be on object screen (trees/characters/etc).
-                    this.shadowBufferFinalCtx.clearRect(0, 0, 96, 96);
-                    this.shadowBufferFinalCtx.drawImage(
-                        this.shadowBufferTemplateCanvas,
-                        0,
-                        0,
-                        96,
-                        96,
-                        0,
-                        0,
-                        96,
-                        96
-                    )
-
-                    if (this.map.mapArray[yC-1][xC-1].z <= z) this.shadowBufferFinalCtx.clearRect(0, 0, 32, 32);
-                    if (this.map.mapArray[yC-1][xC].z <= z) this.shadowBufferFinalCtx.clearRect(32, 0, 32, 32);
-                    if (this.map.mapArray[yC-1][xC+1].z <= z) this.shadowBufferFinalCtx.clearRect(64, 0, 32, 32);
-                    if (this.map.mapArray[yC][xC-1].z <= z) this.shadowBufferFinalCtx.clearRect(0, 32, 32, 32);
-                    this.shadowBufferFinalCtx.clearRect(32, 32, 32, 32);
-                    if (this.map.mapArray[yC][xC+1].z <= z) this.shadowBufferFinalCtx.clearRect(64, 32, 32, 32);
-                    if (this.map.mapArray[yC+1][xC-1].z <= z) this.shadowBufferFinalCtx.clearRect(0, 64, 32, 32);
-                    if (this.map.mapArray[yC+1][xC].z <= z) this.shadowBufferFinalCtx.clearRect(32, 64, 32, 32);
-                    if (this.map.mapArray[yC+1][xC+1].z <= z) this.shadowBufferFinalCtx.clearRect(64, 64, 32, 32);
-
-                    //If adjacent sprites both 1 level high, the shadow will extend into grass to the left. Weird anamoly.
-                    //The below line deletes it. 
-                    if (this.map.mapArray[yC][xC-1].z == z && z < 0) this.shadowBufferFinalCtx.clearRect(0,0,32,32); 
-                    
-                    this.shadowScreenCtx.drawImage(
-                        this.shadowBufferFinalCanvas,
-                        0,
-                        0,
-                        96,
-                        96,
-                        x*this.tileWidth - offsetX - 32,
-                        y*this.tileHeight - offsetY - 32,
-                        96,
-                        96
-                    );
-
-                    // this.shadowScreenCtx.drawImage(
-                    //     this.shadowBufferTemplateCanvas,
-                    //     0,
-                    //     0,
-                    //     96,
-                    //     96,
-                    //     200,
-                    //     200,
-                    //     96,
-                    //     96
-                    // );
-                }
-
-
-
-                if (sprite == 1 || sprite == 10 || sprite == 512) {
+                if (showTile && (sprite == 1 || sprite == 10 || sprite == 512)) {
                     let hash = 1;//((yC + xC) ^ xC * 37) % 7 + 1;
 
                     //Bitwising Time!
-                    if (yC > 1 && -this.map.mapArray[yC-1][xC].z >= -z) hash = hash + 1;
-                    if (-this.map.mapArray[yC][xC + 1].z >= -z) hash = hash + 2;
-                    if (xC > 1 && -this.map.mapArray[yC][xC-1].z >= -z) hash = hash + 4;
+                    if (yC > 1 && -mapArray[yC-1][xC].z >= -z) hash++;
+                    if (-mapArray[yC][xC + 1].z >= -z) hash += 2;
+                    if (xC > 1 && -mapArray[yC][xC-1].z >= -z) hash += 4;
 
-                    var sourceX = (hash-1) % this.sheetCol * this.tileWidth;
-                    var sourceY = Math.floor((hash-1) / this.sheetCol) * this.tileHeight;
+                    var sourceX = (hash-1) % this.sheetCol * tileWidth;
+                    var sourceY = Math.floor((hash-1) / this.sheetCol) * tileHeight;
 
                     var color;
                     
-                    this.groundScreenCtx.drawImage(
-                        this.loadHandler.getImage('img/sprites2.png'),
+                    groundScreenCtx.drawImage(
+                        groundSprites,
                         sourceX,
                         sourceY,
-                        this.tileWidth,
-                        this.tileHeight,
-                        x*this.tileWidth - offsetX,
-                        y*this.tileHeight + z - offsetY,
-                        this.tileWidth,
-                        this.tileHeight
+                        tileWidth,
+                        tileHeight,
+                        xTileWidthOffsetX,
+                        yTileHeightOffsetY + z,
+                        tileWidth,
+                        tileHeight
                     );
 
+                    //Shade or lighten ground based on elevation.
                     if (z < 0) {
                         color = "rgba(255,255,255," + Math.abs(z) / 128 * 0.2 + ")";
                     } else if (z > 0) {
-                        color = "rgba(0,0,0," + Math.abs(z) / 128 * 0.2 + ")"; 
+                        color = "rgba(0,0,0," + Math.abs(z) / 64 * 0.2 + ")"; 
                     } else {
                         color = null;
                     }
@@ -451,162 +375,205 @@ class Game {
                     if (color) {
                         this.groundScreenCtx.fillStyle = color;
                         this.groundScreenCtx.fillRect(
-                            x*this.tileWidth - offsetX,
-                            y*this.tileHeight + z - offsetY,
-                            this.tileWidth,
-                            this.tileHeight
+                            xTileWidthOffsetX,
+                            yTileHeightOffsetY + z,
+                            tileWidth,
+                            tileHeight
                         );
                     }
 
-                    if (this.map.mapArray[yC][xC].z < 0) {          //If ground is elevated, we need to delete what may be on object screen (trees/characters/etc).
+                    if (z < 0) {          //If ground is elevated, we need to delete what may be on object screen (trees/characters/etc).
                         this.objectScreenCtx.clearRect(
-                            x*this.tileWidth - offsetX,
-                            y*this.tileHeight + this.map.mapArray[yC][xC].z - offsetY,
-                            this.tileWidth,
-                            this.tileHeight
+                            xTileWidthOffsetX,
+                            yTileHeightOffsetY + z,
+                            tileWidth,
+                            tileHeight
                         );
                         this.shadowScreenCtx.clearRect(
-                            x*this.tileWidth - offsetX,
-                            y*this.tileHeight + this.map.mapArray[yC][xC].z - offsetY,
-                            this.tileWidth,
-                            this.tileHeight
+                            xTileWidthOffsetX,
+                            yTileHeightOffsetY + z,
+                            tileWidth,
+                            tileHeight
                         );
                     }
                 }
 
-                if (sprite == 1) {
+                if (showTile && sprite == 1) {
                     let hash = ((yC + xC) ^ xC * 37) % 7 + 11;
                     var sourceX = (hash-1) % this.sheetCol * this.tileWidth;
-                    var sourceY = Math.floor((hash-1) / this.sheetCol) * this.tileHeight;
-                    this.groundScreenCtx.drawImage(
-                        this.loadHandler.getImage('img/sprites2.png'),
+                    var sourceY = Math.floor((hash-1) / this.sheetCol) * tileHeight;
+                    groundScreenCtx.drawImage(
+                        groundSprites,
                         sourceX,
                         sourceY,
-                        this.tileWidth,
-                        this.tileHeight,
-                        x*this.tileWidth - offsetX,
-                        y*this.tileHeight + z - offsetY,
-                        this.tileWidth,
-                        this.tileHeight
+                        tileWidth,
+                        tileHeight,
+                        xTileWidthOffsetX,
+                        yTileHeightOffsetY + z,
+                        tileWidth,
+                        tileHeight
                     );
                 }
-                
 
+
+                //Let's add some shadows
+                if (showTile) { //If the tile below is higher than current tile, then we don't need to draw a shadow.  
+                    if (mapArray[yC-1]?.[xC]?.z < z ) {
+                        this.shadowScreenCtx.drawImage(this.shadowBufferTemplateCanvas,32,64,32,32,xTileWidthOffsetX,
+                            yTileHeightOffsetY + z, 32, 32
+                        );
+                    }
+                    if (mapArray[yC-1]?.[xC-1]?.z < z ) {
+                        this.shadowScreenCtx.drawImage(this.shadowBufferTemplateCanvas,64,64,32,32,xTileWidthOffsetX,
+                            yTileHeightOffsetY + z, 32, 32
+                        );
+                    }
+                    if (mapArray[yC-1]?.[xC+1]?.z < z ) {
+                        this.shadowScreenCtx.drawImage(this.shadowBufferTemplateCanvas,0,64,32,32,xTileWidthOffsetX,
+                            yTileHeightOffsetY + z, 32, 32
+                        );
+                    }
+                    if (mapArray[yC]?.[xC-1]?.z < z ) {
+                        this.shadowScreenCtx.drawImage(this.shadowBufferTemplateCanvas,64,32,32,32,xTileWidthOffsetX,
+                            yTileHeightOffsetY + z, 32, 32
+                        );
+                    }
+                    if (mapArray[yC]?.[xC+1]?.z < z ) {
+                        this.shadowScreenCtx.drawImage(this.shadowBufferTemplateCanvas,0,32,32,32,xTileWidthOffsetX,
+                            yTileHeightOffsetY + z, 32, 32
+                        );
+                    }
+                    if (mapArray[yC+1]?.[xC-1]?.z < z ) {
+                        this.shadowScreenCtx.drawImage(this.shadowBufferTemplateCanvas,64,0,32,32,xTileWidthOffsetX,
+                            yTileHeightOffsetY + z, 32, 32
+                        );
+                    }
+                    if (mapArray[yC+1]?.[xC+1]?.z < z ) {
+                        this.shadowScreenCtx.drawImage(this.shadowBufferTemplateCanvas,0,0,32,32,xTileWidthOffsetX,
+                            yTileHeightOffsetY + z, 32, 32
+                        );
+                    }
+                }
 
                 if (yC - 1 < 1) continue;
-                sprite = this.map.mapArray[yC-1][xC].v;
+                sprite = mapArray[yC-1][xC].v;
                 if (sprite == 10) {                                                 //Grass Tile
-                    var sourceX = (sprite-1) % this.sheetCol * this.tileWidth;
-                    var sourceY = Math.floor((sprite-1) / this.sheetCol) * this.tileHeight;
                     var rotationAngle = Math.sin((this.treeTime + x*y) / this.treeAnimationDuration * 2 * Math.PI) * this.treeSway;
                     var grassFrame = (rotationAngle < 0) ? 1 : 0;
-                    this.objectScreenCtx.drawImage(
+                    objectScreenCtx.drawImage(
                         this.loadHandler.getImage('img/grass.png'),
                         128,
                         0 + grassFrame * 27,
                         32,
                         27,
-                        x*this.tileWidth - offsetX,
-                        (y-1)*this.tileHeight - 20 - offsetY,
+                        xTileWidthOffsetX,
+                        (y-1)*tileHeight - 20 - offsetY,
                         32,
                         27
                     );
-                    this.objectScreenCtx.drawImage(
+                    objectScreenCtx.drawImage(
                         this.loadHandler.getImage('img/grass.png'),
                         128,
                         0 + (1 - grassFrame) * 27,
                         32,
                         27,
-                        x*this.tileWidth + 8 - offsetX,
-                        (y-1)*this.tileHeight - 5 - offsetY,
+                        xTileWidthOffsetX + 8,
+                        (y-1)*tileHeight - 5 - offsetY,
                         32,
                         27
                     );
                 }
 
-                if (this.map.mapArray[yC][xC].z != 0) {                                     //Mountain Tile for z-index tiles
-                    var zHeight = -this.map.mapArray[yC][xC].z/this.tileHeight;                  //Mountain = negative; valley = positive. Multiplied by -1: Mountain = positive; valley = negative
-                    var currZ = this.map.mapArray[yC][xC].z;
+                if (z != 0) {                                     //Mountain Tile for z-index tiles
+                    var zHeight = -z/tileHeight;                  //Mountain = negative; valley = positive. Multiplied by -1: Mountain = positive; valley = negative
+                    var currZ = z;
 
-                    if (this.map.mapArray[yC-1][xC].z < this.map.mapArray[yC][xC].z && zHeight < 0) {  //Only creates wall for a valley if the coordinate above is higher :-)
+                    if (mapArray[yC-1][xC].z < z && zHeight < 0) {  //Only creates wall for a valley if the coordinate above is higher :-)
                         for(var i = 0; i>zHeight;i--) {             //Valley       
                             var mSprite = 23;
-                            var sourceX = (mSprite-1) % this.sheetCol * this.tileWidth;
-                            var sourceY = Math.floor((mSprite-1) / this.sheetCol) * this.tileHeight;
+                            var sourceX = (mSprite-1) % this.sheetCol * tileWidth;
+                            var sourceY = Math.floor((mSprite-1) / this.sheetCol) * tileHeight;
                             
-                            this.objectScreenCtx.drawImage(                         
-                                this.loadHandler.getImage('img/sprites2.png'),
+                            objectScreenCtx.drawImage(                         
+                                groundSprites,
                                 sourceX,
                                 sourceY,
-                                this.tileWidth,
-                                this.tileHeight,
-                                x*this.tileWidth - offsetX,
-                                y*this.tileHeight - i*this.tileHeight - offsetY,
-                                this.tileWidth,
-                                this.tileHeight
+                                tileWidth,
+                                tileHeight,
+                                xTileWidthOffsetX,
+                                yTileHeightOffsetY - i*tileHeight,
+                                tileWidth,
+                                tileHeight
                             );        
                         }
                         
                         var gradient = this.objectScreenCtx.createLinearGradient(
-                            x*this.tileWidth - offsetX,
-                            y*this.tileHeight - zHeight*this.tileHeight - offsetY,
-                            x*this.tileWidth - offsetX,
-                            y*this.tileHeight - offsetY
+                            xTileWidthOffsetX,
+                            yTileHeightOffsetY - zHeight*tileHeight,
+                            xTileWidthOffsetX,
+                            yTileHeightOffsetY
                         );
 
                         gradient.addColorStop(.2, "rgba(0,0,0,0.4)");
                         gradient.addColorStop(.5, "rgba(0,0,0,.3)");
                         gradient.addColorStop(1, "rgba(0,0,0,.1)");
 
-                        this.objectScreenCtx.save();
+                        objectScreenCtx.save();
 
-                        this.objectScreenCtx.fillStyle = gradient;
+                        objectScreenCtx.fillStyle = gradient;
 
-                        this.objectScreenCtx.fillRect(
-                            x*this.tileWidth - offsetX,
-                            y*this.tileHeight - zHeight*this.tileHeight - offsetY,
-                            this.tileWidth,
-                            zHeight*this.tileHeight
+                        objectScreenCtx.fillRect(
+                            xTileWidthOffsetX,
+                            yTileHeightOffsetY - zHeight*tileHeight,
+                            tileWidth,
+                            zHeight*tileHeight
                         );
 
-                        this.objectScreenCtx.restore();
+                        objectScreenCtx.restore();
                     }
 
 
+                    var gradientGleam = 3;
                     for (var i=0; i<zHeight; i++) {                 //Mountain
                         var mSprite = 23;
 
                         //Bitwising Time!
-                        if (-this.map.mapArray[yC][xC+1].z / this.tileHeight > i) mSprite = mSprite + 1;
-                        if (-this.map.mapArray[yC][xC-1].z / this.tileHeight > i) mSprite = mSprite + 2;
-                        if (zHeight > 1) mSprite = mSprite + 4;
-                        if (i != 0 && i != zHeight) mSprite = mSprite + 4;
+                        if (-mapArray[yC][xC+1].z / tileHeight > i) {
+                            mSprite += 1;
+                            gradientGleam = 3;
+                        }
+                        if (-mapArray[yC][xC-1].z / tileHeight > i) {
+                            mSprite += 2;
+                            gradientGleam = 0;
+                        }
+                        if (zHeight > 1) mSprite += 4;
+                        if (i != 0 && i != zHeight) mSprite += 4;
                         if (i == zHeight-1 && i != 0) {
-                            mSprite = mSprite + 4;
+                            mSprite += 4;
                         }
 
-                        var sourceX = (mSprite-1) % this.sheetCol * this.tileWidth;
-                        var sourceY = Math.floor((mSprite-1) / this.sheetCol) * this.tileHeight;
+                        var sourceX = (mSprite-1) % this.sheetCol * tileWidth;
+                        var sourceY = Math.floor((mSprite-1) / this.sheetCol) * tileHeight;
 
-                        this.objectScreenCtx.drawImage(
-                            this.loadHandler.getImage('img/sprites2.png'),
+                        objectScreenCtx.drawImage(
+                            groundSprites,
                             sourceX,
                             sourceY,
-                            this.tileWidth,
-                            this.tileHeight,
-                            x*this.tileWidth - offsetX,
-                            y*this.tileHeight - i*this.tileHeight - offsetY,
-                            this.tileWidth,
-                            this.tileHeight
+                            tileWidth,
+                            tileHeight,
+                            xTileWidthOffsetX,
+                            yTileHeightOffsetY - i*tileHeight,
+                            tileWidth,
+                            tileHeight
                         );
                     }
 
                     if (zHeight > 0) {              //Gradient the walls of the mountain
                         var gradient = this.objectScreenCtx.createLinearGradient(
-                            x*this.tileWidth - offsetX,
-                            y*this.tileHeight - offsetY,
-                            x*this.tileWidth - offsetX,
-                            y*this.tileHeight - zHeight*this.tileHeight - offsetY
+                            xTileWidthOffsetX,
+                            yTileHeightOffsetY,
+                            xTileWidthOffsetX,
+                            yTileHeightOffsetY - zHeight*tileHeight
                         );  
 
                         gradient.addColorStop(.2, "rgba(0,0,0,0.3)");
@@ -614,24 +581,22 @@ class Game {
                         gradient.addColorStop(.5, "rgba(0,0,0,.1)");
                         gradient.addColorStop(1, "rgba(0,0,0,0)");
 
-                        this.objectScreenCtx.save();
+                        objectScreenCtx.save();
 
-                        this.objectScreenCtx.fillStyle = gradient;
+                        objectScreenCtx.fillStyle = gradient;
 
-                        this.objectScreenCtx.fillRect(
-                            x*this.tileWidth - offsetX,
-                            (y+1)*this.tileHeight - offsetY,
-                            this.tileWidth,
-                            -zHeight*this.tileHeight
+                        objectScreenCtx.fillRect(
+                            xTileWidthOffsetX + gradientGleam,
+                            (y+1)*tileHeight - offsetY,
+                            tileWidth - gradientGleam,
+                            -zHeight*tileHeight
                         );
 
-                        this.objectScreenCtx.restore();
+                        objectScreenCtx.restore();
 
                     }
 
                 }
-
-
                 
                 if (sprite == 512) { 
 
@@ -645,20 +610,20 @@ class Game {
                         160,
                         160,
                         64,
-                        x*this.tileWidth - offsetX - 64 + xOffset,
-                        y*this.tileHeight - offsetY - 32,
+                        xTileWidthOffsetX - 64 + xOffset + this.lightSource.moveX,
+                        yTileHeightOffsetY - 32 + this.lightSource.moveY,
                         160,
                         64
                     );
 
                     // Translate to the center of the tree
-                    this.objectScreenCtx.translate((x*this.tileWidth - offsetX - 64) + 160/2, ((y-1)*this.tileHeight - offsetY - 192) + 224);
+                    objectScreenCtx.translate((xTileWidthOffsetX - 64) + 160/2, ((y-1)*tileHeight - offsetY - 192) + 224);
 
                     // Rotate the context
-                    this.objectScreenCtx.rotate(rotationAngle * Math.PI / 180);
+                    objectScreenCtx.rotate(rotationAngle * Math.PI / 180);
 
                     // Draw the image, but adjust the x and y coordinates because we've translated the context
-                    this.objectScreenCtx.drawImage (
+                    objectScreenCtx.drawImage (
                         this.loadHandler.getImage('img/tree.png'),
                         0,
                         0,
@@ -672,8 +637,8 @@ class Game {
 
                     //Create code to change the hue of the drawImage directly below to something random
                     let hash = (((yC + xC) ^ xC * 37) % 7 + 1)*5;
-                    this.objectScreenCtx.filter = `hue-rotate(${hash}deg)`;
-                    this.objectScreenCtx.drawImage(
+                    objectScreenCtx.filter = `hue-rotate(${hash}deg)`;
+                    objectScreenCtx.drawImage(
                         this.treeOffScreenCanvas,
                         0,
                         0,
@@ -684,8 +649,8 @@ class Game {
                         160,
                         160
                     );  
-                    this.objectScreenCtx.filter = 'none';
-                    this.objectScreenCtx.setTransform(1,0,0,1,0,0);
+                    objectScreenCtx.filter = 'none';
+                    objectScreenCtx.setTransform(1,0,0,1,0,0);
 
                 
                 }
@@ -693,10 +658,12 @@ class Game {
             }
 
             //Let's plop in some characters (Characters are added after end of row)
-            var len = this.characters.length;
+            const len = this.characters.length;
+            const characters = this.characters;
+            const characterSprites = this.loadHandler.getImage('img/sprites-fixedgrid.png');
             for (var i = 0; i < len; i++) {
-                var character = this.characters[i];
-                var characterRow = Math.floor(character.y / this.tileHeight);
+                const character = characters[i];
+                const characterRow = Math.floor(character.y / tileHeight);
                 if (characterRow != yC) continue; 
     
                 var characterScreenX = character.x - camX;
@@ -711,13 +678,13 @@ class Game {
                 var flipOffset = flip == -1 ? -122 : 0;
     
                 if (flip == -1) {
-                    this.objectScreenCtx.save();
-                    this.objectScreenCtx.scale(-1,1);
+                    objectScreenCtx.save();
+                    objectScreenCtx.scale(-1,1);
                     // this.silhouetteScreenCtx.save();
                     // this.silhouetteScreenCtx.scale(-1,1);
                 }
-                this.objectScreenCtx.drawImage(
-                    this.loadHandler.getImage('img/sprites-fixedgrid.png'),
+                objectScreenCtx.drawImage(
+                    characterSprites,
                     sourceX,
                     sourceY,
                     112,
@@ -728,22 +695,9 @@ class Game {
                     112
                 );
 
-                //Draw silhouette
-                // this.silhouetteScreenCtx.drawImage(
-                //     this.loadHandler.getImage('img/sprites-fixedgrid.png'),
-                //     sourceX,
-                //     sourceY,
-                //     112,
-                //     112,
-                //     (characterScreenX + character.width/2 - 122/2) * flip + flipOffset,
-                //     characterScreenY - character.base,
-                //     112,
-                //     112
-                // );
-
 
                 if (flip == -1) {
-                    this.objectScreenCtx.restore();
+                    objectScreenCtx.restore();
                     // this.silhouetteScreenCtx.restore();
                 }
             }
