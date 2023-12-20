@@ -162,7 +162,10 @@ class Game {
         player.moveLeft = keyBoardState.isDown("ArrowLeft") ? true:false;
         player.moveRight = keyBoardState.isDown("ArrowRight") ? true:false;
         player.moveUp = keyBoardState.isDown("ArrowUp") ? true: false;
-        player.moveDown = keyBoardState.isDown("ArrowDown") ? true : false;
+        player.moveDown = keyBoardState.isDown("ArrowDown") ? true: false;
+        if (keyBoardState.isDown("Space")) {
+            if (player.jump == false && player.isOnGround == true) player.jump = true;
+        } 
 
         if (keyBoardState.isDown("KeyP")) {
             this.scale += 0.1;
@@ -690,7 +693,7 @@ class Game {
                     112,
                     112,
                     (characterScreenX + character.width/2 - 122/2) * flip + flipOffset,
-                    characterScreenY - character.base,
+                    characterScreenY - character.base + character.z,
                     112,
                     112
                 );

@@ -14,9 +14,9 @@ const spriteMap = {
         },
         "Jumping": {
             "Down": [7,8],
-            "Up": [17,18],
-            "Right": [27,28],
-            "Left": [27,28]
+            "Up": [7,8],
+            "Right": [7,8],
+            "Left": [7,8]
         },
         "Plowing": {
             "Down": [30,31,32,33],
