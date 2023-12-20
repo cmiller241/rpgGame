@@ -4,7 +4,7 @@ class Character {
         this.x = x;
         this.y = y;
         this.z = 0;
-        this.base=96;
+        this.base=84;
         this.width = width;
         this.height = height;
         this.moveRight = false;
@@ -24,7 +24,7 @@ class Character {
         this.vx = 0;
         this.vy = 0;
         this.vz = 0;
-        this.footprint = 64;
+        this.footprint = 7;
         this.frame = 0;
         this.speedLimit = 10;
         this.isOnGround = true;
@@ -65,6 +65,7 @@ class Character {
     getTile(x, y, mapArray) {
         const tileX = Math.floor(x / 32);
         const tileY = Math.floor(y / 32);
+        console.log("tileX is " + tileX + " and tileY is " + tileY);
         return {
             v: mapArray[tileY][tileX].v,
             z: mapArray[tileY][tileX].z
