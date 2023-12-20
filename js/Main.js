@@ -104,7 +104,7 @@ class Game {
         this.lightSource = {x: 200, y: -2000, size: -32, moveX: 0, moveY: 0};  
 
         this.characters = [];
-        this.characters[0] = new Character(0,200,200,32,64);
+        this.characters[0] = new Character(0,200,500,32,64);
         //this.characters[1] = new Character(1,200,400,32,64);
     }
 
@@ -598,7 +598,7 @@ class Game {
 
                 }
                 
-                if (sprite == 512) { 
+                if (sprite == 512) {    //512 
 
                     let rotationAngle = Math.sin((this.treeTime + Math.cos(x*10) * Math.sin(y*10)) / this.treeAnimationDuration * 2 * Math.PI) * this.treeSway;
                     let xOffset = Math.sin(rotationAngle) * 3;
