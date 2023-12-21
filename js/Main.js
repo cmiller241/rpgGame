@@ -315,7 +315,7 @@ class Game {
         // this.silhouetteScreenCtx.clearRect(0, 0, this.silhouetteOffScreenCanvas.width, this.silhouetteOffScreenCanvas.height);
 
         var camX = Math.floor(this.characters[0].x - Math.floor(this.canvas.width/2/this.scale));     //Camera begins half stage from center of player
-        var camY = Math.floor(this.characters[0].y - Math.floor(this.canvas.height/2/this.scale));     //Camera begins half stage from center of player
+        var camY = Math.floor(this.characters[0].y + this.characters[0].z - Math.floor(this.canvas.height/2/this.scale));     //Camera begins half stage from center of player
         if (camX < 0) { camX = 0};                                  //If camera X is less than 0, it equals 0
         if (camY < 0) { camY = 0};                                  //If camera Y is less than 0, it equals 0
         var firstTileX = Math.floor(camX / this.tileWidth);              //Find first tile to show based on player location

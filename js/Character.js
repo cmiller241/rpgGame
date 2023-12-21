@@ -127,7 +127,8 @@ class Character {
             this.action = "Standing";
         }
         if (this.isOnGround == false) {
-            this.action = "Jumping";
+            if (this.vz < 0 ) this.action = "Jumping-Up";
+            if (this.vz > 0 ) this.action = "Jumping-Down";
         }
         if (this.jump && this.isOnGround) {
             this.vz = this.jumpForce;
