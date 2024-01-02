@@ -6,8 +6,8 @@ body {
     height:100%;
     background:#fff
 }
-canvas {
+/* canvas {
     image-rendering: pixelated;
     image-rendering: -moz-crisp-edges; /* Firefox */
     image-rendering: -webkit-crisp-edges; /* Webkit (Safari/Chrome) */
-}
+} */

@@ -14,15 +14,15 @@ const spriteMap = {
         },
         "Jumping-Up": {
             "Down": [7],
-            "Up": [7],
-            "Right": [7],
-            "Left": [7]
+            "Up": [18],
+            "Right": [18],
+            "Left": [18]
         },
         "Jumping-Down": {
             "Down": [8],
-            "Up": [8],
-            "Right": [8],
-            "Left": [8]
+            "Up": [28],
+            "Right": [28],
+            "Left": [28]
         },
         "Plowing": {
             "Down": [30,31,32,33],

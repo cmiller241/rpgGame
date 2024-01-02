@@ -5,6 +5,8 @@ class Character {
         this.y = y;
         this.z = 0;
         this.base=84;
+        this.shadowX=10;
+        this.shadowY=10;
         this.width = width;
         this.height = height;
         this.moveRight = false;
@@ -70,6 +72,9 @@ class Character {
         const bottomLeftTile = this.getTile(left, bottom, mapArray);
         const bottomRightTile = this.getTile(right, bottom, mapArray);
 
+        this.shadowX = Math.round((left + right) / 2);       //This is the best place to calculate shadow placement
+        this.shadowY = Math.round((top + bottom) / 2) + bottomLeftTile.z;       //Despite being irrelevant to collision detection
+
         if (topLeftTile.v > 500 || topRightTile.v > 500  || bottomLeftTile.v > 500 || bottomRightTile.v > 500 ||
             topLeftTile.z < newZ || topRightTile.z < newZ || bottomLeftTile.z < newZ || bottomRightTile.z < newZ) {
             return false;
@@ -84,8 +89,8 @@ class Character {
         const tileY = Math.floor(y / 32);
         console.log("tileX is " + tileX + " and tileY is " + tileY);
         return {
-            v: mapArray[tileY][tileX].v,
-            z: mapArray[tileY][tileX].z
+            v: mapArray[tileY]?.[tileX]?.v,
+            z: mapArray[tileY]?.[tileX]?.z
         };
     }
 
