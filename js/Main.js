@@ -17,9 +17,9 @@ class Game {
         this.canvasXNum = Math.floor(this.canvas.width / this.tileWidth);
         this.canvasYNum = Math.floor(this.canvas.height / this.tileHeight);
         this.drawingSurface = this.canvas.getContext("2d");
-        this.drawingSurface.imageSmoothingEnabled = false;
-        this.drawingSurface.mozImageSmoothingEnabled = false;
-        this.drawingSurface.webkitImageSmoothingEnabled = false;
+        // this.drawingSurface.imageSmoothingEnabled = false;
+        // this.drawingSurface.mozImageSmoothingEnabled = false;
+        // this.drawingSurface.webkitImageSmoothingEnabled = false;
         this.playerX = 0;
         this.playerY = 0;
         this.scale = 2;
@@ -110,11 +110,13 @@ class Game {
 
     resizeCanvas() {
 
+        let aspectRatio = this.canvas.height / this.canvas.width;
+
         this.canvas.width = window.innerWidth;
 
         this.canvas.style.width = Math.floor(this.scale*100) + "%";
         
-        this.canvas.height = window.innerHeight;
+        this.canvas.height = this.canvas.width * aspectRatio;
 
         this.canvasXNum = Math.floor(this.canvas.width / this.tileWidth);
         this.canvasYNum = Math.floor(this.canvas.height / this.tileHeight);
@@ -162,7 +164,10 @@ class Game {
         player.moveLeft = keyBoardState.isDown("ArrowLeft") ? true:false;
         player.moveRight = keyBoardState.isDown("ArrowRight") ? true:false;
         player.moveUp = keyBoardState.isDown("ArrowUp") ? true: false;
-        player.moveDown = keyBoardState.isDown("ArrowDown") ? true : false;
+        player.moveDown = keyBoardState.isDown("ArrowDown") ? true: false;
+        if (keyBoardState.isDown("Space")) {
+            if (player.jump == false && player.isOnGround == true) player.jump = true;
+        } 
 
         if (keyBoardState.isDown("KeyP")) {
             this.scale += 0.1;
@@ -312,7 +317,7 @@ class Game {
         // this.silhouetteScreenCtx.clearRect(0, 0, this.silhouetteOffScreenCanvas.width, this.silhouetteOffScreenCanvas.height);
 
         var camX = Math.floor(this.characters[0].x - Math.floor(this.canvas.width/2/this.scale));     //Camera begins half stage from center of player
-        var camY = Math.floor(this.characters[0].y - Math.floor(this.canvas.height/2/this.scale));     //Camera begins half stage from center of player
+        var camY = Math.floor(this.characters[0].y + this.characters[0].z - Math.floor(this.canvas.height/2/this.scale));     //Camera begins half stage from center of player
         if (camX < 0) { camX = 0};                                  //If camera X is less than 0, it equals 0
         if (camY < 0) { camY = 0};                                  //If camera Y is less than 0, it equals 0
         var firstTileX = Math.floor(camX / this.tileWidth);              //Find first tile to show based on player location
@@ -455,8 +460,8 @@ class Game {
                     }
                 }
 
-                if (yC - 1 < 1) continue;
-                sprite = mapArray[yC-1][xC].v;
+                //if (yC - 1 < 1) continue;
+                //sprite = mapArray[yC][xC].v;
                 if (sprite == 10) {                                                 //Grass Tile
                     var rotationAngle = Math.sin((this.treeTime + x*y) / this.treeAnimationDuration * 2 * Math.PI) * this.treeSway;
                     var grassFrame = (rotationAngle < 0) ? 1 : 0;
@@ -484,6 +489,7 @@ class Game {
                     );
                 }
 
+                if (yC - 1 < 1) continue;
                 if (z != 0) {                                     //Mountain Tile for z-index tiles
                     var zHeight = -z/tileHeight;                  //Mountain = negative; valley = positive. Multiplied by -1: Mountain = positive; valley = negative
                     var currZ = z;
@@ -655,6 +661,38 @@ class Game {
                 
                 }
             
+                //If player in south end of pit, this will erase him but...
+                //I need to increase the width of player in a real hacky way. Probably a better solution.
+                //The && mapArray[..][..].z > 0 is to prevent player/mountain shadows being erased if on mountain. 
+                if (mapArray[yC-1]?.[xC]?.z > z && mapArray[yC-1]?.[xC]?.z > 0) {
+                    this.objectScreenCtx.clearRect(
+                        xTileWidthOffsetX,
+                        y*tileHeight - offsetY + z,
+                        tileWidth,
+                        tileHeight
+                    );
+                    this.shadowScreenCtx.clearRect(
+                        xTileWidthOffsetX,
+                        y*tileHeight - offsetY + z,
+                        tileWidth,
+                        tileHeight
+                    );
+                }
+                if (mapArray[yC-2]?.[xC]?.z > z && mapArray[yC-2]?.[xC]?.z > 0) {
+                    this.objectScreenCtx.clearRect(
+                        xTileWidthOffsetX,
+                        y*tileHeight - offsetY + z,
+                        tileWidth,
+                        tileHeight
+                    );
+                    this.shadowScreenCtx.clearRect(
+                        xTileWidthOffsetX,
+                        y*tileHeight - offsetY + z,
+                        tileWidth,
+                        tileHeight
+                    );
+                }
+
             }
 
             //Let's plop in some characters (Characters are added after end of row)
@@ -665,6 +703,29 @@ class Game {
                 const character = characters[i];
                 const characterRow = Math.floor(character.y / tileHeight);
                 if (characterRow != yC) continue; 
+
+                console.log("Character vz equals" + character.vz);
+                if (character.isOnGround == false) {
+                    //Shadow for Particular Character
+                    var leftOffset = (character.direction == "Left") ? 5:0;
+                    var shadowScreenX = character.shadowX + leftOffset - camX;
+                    var shadowScreenY = character.shadowY - camY;
+                    this.shadowScreenCtx.fillStyle = "rgba(0,0,0,0.8)";
+                    this.shadowScreenCtx.beginPath();
+                    this.shadowScreenCtx.ellipse(
+                        shadowScreenX-2,
+                        shadowScreenY,
+                        15,
+                        5,
+                        0,
+                        0,
+                        2 * Math.PI
+                    );
+                    this.shadowScreenCtx.fill();
+                }
+
+
+
     
                 var characterScreenX = character.x - camX;
                 var characterScreenY = character.y - camY;
@@ -690,11 +751,10 @@ class Game {
                     112,
                     112,
                     (characterScreenX + character.width/2 - 122/2) * flip + flipOffset,
-                    characterScreenY - character.base,
+                    characterScreenY - character.base + character.z,
                     112,
                     112
                 );
-
 
                 if (flip == -1) {
                     objectScreenCtx.restore();
@@ -737,6 +797,17 @@ class Game {
             this.offscreenCtx.drawImage(this.shadowOffScreenCanvas, 0, 0);
         this.offscreenCtx.globalAlpha = 1;
         this.offscreenCtx.drawImage(this.objectOffScreenCanvas, 0, 0);
+        this.offscreenCtx.drawImage(
+            this.loadHandler.getImage('img/ui.png'),
+            0,
+            0,
+            800,
+            800,
+            0,
+            this.canvas.height/this.scale - 120,
+            800,
+            800
+        )
         this.drawingSurface.drawImage(this.offscreenCanvas, 0, 0);
 
     }
