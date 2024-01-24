@@ -1,5 +1,5 @@
-local scaleX = 3
-local scaleY = 3
+local scaleX = 1
+local scaleY = 1
 local increasing = true
 local playerX = 10
 local playerY = 10
@@ -18,10 +18,11 @@ local treeFoliage
 local brokenYC
 local brokenXC
 local brokenHash
+local TLfres = require "tlfres"
 local leavesShader = love.graphics.newShader[[
     extern number time;
     vec4 effect(vec4 color, Image texture, vec2 texture_coords, vec2 screen_coords) {
-        vec2 displacement = vec2(sin(texture_coords.y * 10.0 + time) * 0.005, 0.0);
+        vec2 displacement = vec2(sin(texture_coords.x * texture_coords.y * 10.0 + time) * 0.005, 0.0);
         vec4 pixel = Texel(texture, texture_coords + displacement);
         return pixel * color;
     }
@@ -98,11 +99,22 @@ function love.update(dt)
     if love.keyboard.isDown("down") then
         playerY = playerY + playerSpeed * dt
     end
+    if love.keyboard.isDown("z") then
+        scaleX = scaleX + 0.01
+        scaleY = scaleX
+    end
+    if love.keyboard.isDown("x") then
+        scaleX = scaleX - 0.01
+        scaleY = scaleX
+    end 
 
 end
 
 function love.draw()
-    
+    --windowWidth = 1920
+    --windowHeight = 1080
+    --TLfres.beginRendering(windowWidth,windowHeight)
+
     local windowWidth, windowHeight = love.graphics.getDimensions()
     local tilesHorizontal = math.ceil(windowWidth / (tileSize * scaleX))
     local tilesVertical = math.ceil(windowHeight / (tileSize * scaleY))
@@ -119,13 +131,16 @@ function love.draw()
     
     for y = 1, tilesVertical + 10 do                             --+5 because of the damn trees. 
         local yC = firstTileY + y
-        if yC < 1 then goto continueY end
+        if yC < 1 or yC > #mapArray then goto continueY end
         for x = -1, tilesHorizontal + 3 do
             local xC = firstTileX + x
-            if xC < 1 then goto continueX end
+            if xC < 1 or xC > #mapArray[yC] then goto continueX end
             local xTileWidthOffsetX = (x-1)*tileSize - offsetX;
             local yTileHeightOffsetY = (y-1)*tileSize - offsetY;
 
+            --print("yC:", yC, "xC:", xC)
+            --print("mapArray[yC]:", mapArray[yC])
+            --if mapArray[yC] then print("mapArray[yC][xC]:", mapArray[yC][xC]) end
             local tile = mapArray[yC][xC][1]
 
             if tile == 1 or tile == 10 or tile > 500 then                         --Draw grass    
@@ -162,16 +177,20 @@ function love.draw()
             end
 
             if tile > 500 then                                      --Draw tree
+                local time = love.timer.getTime()
+                local sway = math.sin(time + yC) * 0.025
                 love.graphics.draw(                                 --Draw tree trunk
                     treeSheet,
                     treeTrunk,
                     xTileWidthOffsetX * scaleX - 64*scaleX,
-                    yTileHeightOffsetY * scaleY - 192*scaleY,
-                    0,
+                    yTileHeightOffsetY * scaleY - 192*scaleY + 192,
+                    sway,
                     scaleX,
-                    scaleY
+                    scaleY,
+                    0,
+                    192
                 )
-                leavesShader:send('time', love.timer.getTime())
+                leavesShader:send('time', time)
                 --leafShader:send('imgHeight', 160)
                 --leafShader:send('hue', (xC + yC) % 360)
                 love.graphics.setShader(leavesShader)
@@ -179,15 +198,18 @@ function love.draw()
                     treeSheet,
                     treeFoliage,
                     xTileWidthOffsetX * scaleX - 64*scaleX,
-                    yTileHeightOffsetY * scaleY - 192*scaleY,
-                    0,
+                    yTileHeightOffsetY * scaleY - 192*scaleY + 192,
+                    sway,
                     scaleX,
-                    scaleY
+                    scaleY,
+                    0,
+                    192
                 )
                 love.graphics.setShader()
             end
 
-            if yC - 1 < 1 then goto continueX end
+            if yC - 1 < 1 or yC - 1 > #mapArray then goto continueX end
+            if xC < 1 or xC > #mapArray[yC - 1] then goto continueX end
             local tile = mapArray[yC - 1][xC][1]
             local yTileHeightOffsetY = (y-2)*tileSize - offsetY;
             if tile == 10 then
@@ -298,4 +320,6 @@ function love.draw()
     love.graphics.print("Player X: " .. playerX, 10, 90)
     love.graphics.print("Player Y: " .. playerY, 10, 110)   
     love.graphics.print("The number of sprites is " .. #sprites, 10, 130)
+
+    --TLfres.endRendering()
 end
