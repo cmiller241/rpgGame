@@ -1,5 +1,5 @@
-# rpgGame
-This game is an attempt to create a Love2d RPG
+# Scattered Verses
+This game is an attempt to create a Love2d RPG with custom made shaders. 
 
 ## Tasklist
 - [x] Create topdown jump system for player
