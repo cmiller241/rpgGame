@@ -11,3 +11,4 @@ This game is an attempt to create a Love2d RPG with custom made shaders.
 - [ ] Create water virtual screen to render over rest of the map
 - [ ] Create mask system for player so he can swim
 - [ ] Create hacky lighting and shadowing system
+- [ ] Add water considerations for color map (perhaps in pixel.r; since pixel.g could accommodate both pixel.g and pixel.r info currently). Height map could be created dynamically. 
