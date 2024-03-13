@@ -6,6 +6,7 @@ local increasing = true
 local playerX = 200
 local playerY = 250
 local playerZ = 0
+local playerShadowZ = 0
 local playerFriction = .96
 local playerFrame = 1
 local playerFrameTime = 0
@@ -45,7 +46,8 @@ local objectCanvas = love.graphics.newCanvas(windowX,windowY)
 local shadowCanvas = love.graphics.newCanvas(windowX,windowY)
 local colorMapCanvas = love.graphics.newCanvas(windowX,windowY)
 local offscreenCanvas = love.graphics.newCanvas(windowX,windowY)
-local tempCanvas = love.graphics.newCanvas(200*scaleX,200*scaleY)
+local nightCanvas = love.graphics.newCanvas(windowX,windowY)
+local tempCanvas = love.graphics.newCanvas(200,200)
 local gradientShader = love.graphics.newShader("shaders/gradientShader.glsl")
 local lightShader = love.graphics.newShader("shaders/lightShader.glsl")    
 local brightenShader = love.graphics.newShader("shaders/brightenShader.glsl")
@@ -53,11 +55,15 @@ local combinedShader = love.graphics.newShader("shaders/combinedShader.glsl")
 local leavesShader = love.graphics.newShader("shaders/leavesShader.glsl")
 local grassShader = love.graphics.newShader("shaders/grassShader.glsl")
 local shadowShader = love.graphics.newShader("shaders/shadowShader.glsl")
+local shadowShaderFromLight = love.graphics.newShader("shaders/shadowShaderFromLight.glsl")
 local spriteShader = love.graphics.newShader("shaders/spriteShader.glsl")
+local spotlightShader = love.graphics.newShader("shaders/spotlightShader.glsl")
+local spriteShaderFromLight = love.graphics.newShader("shaders/spriteShaderFromLight.glsl")
+local lutShader = love.graphics.newShader("shaders/lutShader.glsl")
 
 
 function love.load()
-    love.window.setMode(1920, 1080, {resizable=true, vsync=false, minwidth=400, minheight=300})
+    love.window.setMode(1920, 1280, {resizable=true, vsync=false, minwidth=400, minheight=300})
     love.window.setTitle("RPG")
     love.graphics.setDefaultFilter("nearest", "nearest")
 
@@ -68,7 +74,7 @@ function love.load()
     heroSheet = love.graphics.newImage("img/sprites-fixedgrid.png")    
     treeSheet = love.graphics.newImage("img/tree3.png")
     grunge = love.graphics.newImage("/img/grunge3.jpg")
-    hero = love.graphics.newImage("img/onehero.png")
+    lutImage = love.graphics.newImage("img/LUD2.png")
 
     sprites = {}
     heroQuads = {}
@@ -98,12 +104,18 @@ function love.resize(w, h)
     shadowCanvas = love.graphics.newCanvas(windowX,windowY)   
     colorMapCanvas = love.graphics.newCanvas(windowX,windowY)
     offscreenCanvas = love.graphics.newCanvas(windowX,windowY)
-    tempCanvas = love.graphics.newCanvas(200*scaleX,200*scaleY)
+    nightCanvas = love.graphics.newCanvas(windowX,windowY)
+    tempCanvas = love.graphics.newCanvas(200,200)
 end
 
 function love.keypressed(key)
     if key == "c" then
         showColorMap = not showColorMap
+    end
+    if key == "space" then
+        playerState = "Jumping-Start"
+        playerDirection = "Down"
+        playerFrame = 1
     end
 end
 
@@ -127,26 +139,26 @@ function love.update(dt)
         if playerFrame > numFrames then playerFrame = 1 end
     end
 
-    playerState = "Standing"
+    if playerState ~= "Jumping-Start" then playerState = "Standing" end
 
     if love.keyboard.isDown("right") then
-        playerax = 1
+        playerax = .5
         playerState = "Walking"
         playerDirection = "Right"
     end
     if love.keyboard.isDown("left") then
-        playerax = -1
+        playerax = -.5
         playerState = "Walking"
         playerDirection = "Left"
     end
     if love.keyboard.isDown("up") then
-        playeray = -1
+        playeray = -.5
         playerState = "Walking"
         playerDirection = "Up"
     end
     if love.keyboard.isDown("down") then
         --playerY = playerY + playerSpeed * dt
-        playeray = 1
+        playeray = .5
         playerState = "Walking"
         playerDirection = "Down"
     end
@@ -158,16 +170,6 @@ function love.update(dt)
         playeray = 0
         playervy = 0
     end
-    if love.keyboard.isDown("z") then
-        scaleX = scaleX + 0.01
-        scaleY = scaleX
-        tempCanvas = love.graphics.newCanvas(200*scaleX,200*scaleY)
-    end
-    if love.keyboard.isDown("x") then
-        scaleX = scaleX - 0.01
-        scaleY = scaleX
-        tempCanvas = love.graphics.newCanvas(200*scaleX,200*scaleY)
-    end 
     local speed = 20 -- change this to control the speed of angle change
     if love.keyboard.isDown('m') then
         angle = angle + speed * dt
@@ -198,7 +200,12 @@ function love.update(dt)
     local gravityFactor = 500
     --playervz = playervz + playeraz
     playervz = playervz + playerGravity * gravityFactor * dt
-    playerZ = playerZ + playervz * speedFactor * dt
+    --playerZ = playerZ + playervz * speedFactor * dt
+
+    if playerZ > 0 then 
+        playerZ = 0
+        playerIsOnGround = true
+    end
 
     playervx = (playervx + playerax) * playerFriction
     playervy = (playervy + playeray) * playerFriction
@@ -207,12 +214,10 @@ function love.update(dt)
     if playervx > playerSpeedLimit then playervx = playerSpeedLimit end
     if playervy < -1 * playerSpeedLimit then playervy = -1 * playerSpeedLimit end
     if playervy > playerSpeedLimit then playervy = playerSpeedLimit end 
-    --moveCharacter(playervx, playervy, playervz)
+    
+    moveCharacter(playervx, playervy, playervz*speedFactor*dt)
 
-    if playerZ > 0 then 
-        playerZ = 0
-        playerIsOnGround = true
-    end
+
 
     if playerState ~= previousState or playerDirection ~= previousDirection then
         playerFrame = 1
@@ -223,22 +228,24 @@ end
 
 
 function love.draw()
-    love.graphics.setCanvas()
+    --love.graphics.setCanvas()
+    --love.graphics.clear()
+    love.graphics.setCanvas(shadowCanvas)
     love.graphics.clear()
     love.graphics.setCanvas(objectCanvas)
-    love.graphics.clear()
-    love.graphics.setCanvas(shadowCanvas)
     love.graphics.clear()
     love.graphics.setCanvas(colorMapCanvas)
     love.graphics.clear()
     love.graphics.setCanvas(offscreenCanvas)
     love.graphics.clear()
+    love.graphics.setCanvas(nightCanvas)
+    love.graphics.clear()
 
     --local windowWidth, windowHeight = love.graphics.getDimensions()
     local windowWidth = windowX
     local windowHeight = windowY
-    local tilesHorizontal = math.ceil(windowWidth / (tileSize * scaleX))
-    local tilesVertical = math.ceil(windowHeight / (tileSize * scaleY))
+    local tilesHorizontal = math.ceil(windowWidth / tileSize)
+    local tilesVertical = math.ceil(windowHeight / tileSize)
 
     local cameraX = playerX - windowWidth / 2 
     local cameraY = playerY - windowHeight / 2 
@@ -254,6 +261,7 @@ function love.draw()
         local yC = firstTileY + y
         if yC < 1 or yC > #mapArray then goto continueY end
         for x = 1, tilesHorizontal+5 do                          --+5 because of the damn trees.
+            love.graphics.setCanvas(offscreenCanvas)
             local xC = firstTileX + x
             if xC < 1 or xC > #mapArray[yC] then goto continueX end
             local xTileWidthOffsetX = (x-1)*tileSize - offsetX;
@@ -280,10 +288,10 @@ function love.draw()
                     love.graphics.setCanvas(colorMapCanvas)
                     love.graphics.rectangle(
                         "fill",
-                        xTileWidthOffsetX * scaleX,
-                        yTileHeightOffsetY * scaleY + z * scaleY,
-                        tileSize * scaleX,
-                        tileSize * scaleY
+                        xTileWidthOffsetX,
+                        yTileHeightOffsetY + z,
+                        tileSize,
+                        tileSize
                     )
                     love.graphics.setColor(1,1,1,1)
                     love.graphics.setCanvas(offscreenCanvas)
@@ -298,11 +306,8 @@ function love.draw()
                 love.graphics.draw(
                     spriteSheet, 
                     sprites[tempTile], 
-                    xTileWidthOffsetX * scaleX,
-                    yTileHeightOffsetY * scaleY + z * scaleY,
-                    0, 
-                    scaleX, 
-                    scaleY
+                    xTileWidthOffsetX,
+                    yTileHeightOffsetY + z
                 )
                 love.graphics.setShader()
 
@@ -313,18 +318,19 @@ function love.draw()
                     love.graphics.setCanvas(objectCanvas)
                     love.graphics.rectangle(
                         'fill',
-                        xTileWidthOffsetX * scaleX,
-                        yTileHeightOffsetY * scaleY + z * scaleY,
-                        tileSize * scaleX,
-                        tileSize * scaleY
+                        xTileWidthOffsetX,
+                        yTileHeightOffsetY + z,
+                        tileSize,
+                        tileSize
                     )
                     love.graphics.setCanvas(shadowCanvas)
+                    love.graphics.setColor(0,0,0,0)
                     love.graphics.rectangle(
                         'fill',
-                        xTileWidthOffsetX * scaleX,
-                        yTileHeightOffsetY * scaleY + z * scaleY,
-                        tileSize * scaleX,
-                        tileSize * scaleY
+                        xTileWidthOffsetX,
+                        yTileHeightOffsetY + z,
+                        tileSize,
+                        tileSize
                     )
                     love.graphics.setBlendMode('alpha')
                     love.graphics.setColor(1,1,1,1)
@@ -344,14 +350,12 @@ function love.draw()
                 if hash > 220 then 
                     hash = 12
                 end
+                love.graphics.setCanvas(offscreenCanvas)
                 love.graphics.draw(
                     spriteSheet,
                     sprites[hash],
-                    xTileWidthOffsetX * scaleX,
-                    yTileHeightOffsetY * scaleY + z * scaleY,
-                    0,
-                    scaleX,
-                    scaleY
+                    xTileWidthOffsetX,
+                    yTileHeightOffsetY + z
                 )
             end
 
@@ -378,11 +382,8 @@ function love.draw()
                     love.graphics.draw(
                         spriteSheet,
                         sprites[mSprite],
-                        xTileWidthOffsetX * scaleX,
-                        (yTileHeightOffsetY + i*tileSize) * scaleY,
-                        0,
-                        scaleX,
-                        scaleY
+                        xTileWidthOffsetX,
+                        yTileHeightOffsetY + i*tileSize
                     )
 
                     local occluder = 0                      --Color Map the Mountain
@@ -412,10 +413,10 @@ function love.draw()
                     love.graphics.setCanvas(colorMapCanvas)
                     love.graphics.rectangle(
                         "fill",
-                        xTileWidthOffsetX * scaleX,
-                        (yTileHeightOffsetY + i*tileSize) * scaleY,
-                        tileSize * scaleX,
-                        tileSize * scaleY
+                        xTileWidthOffsetX,
+                        yTileHeightOffsetY + i*tileSize,
+                        tileSize,
+                        tileSize
                     )
                     
                     --Delete shadows and object behind mountain face
@@ -424,18 +425,19 @@ function love.draw()
                     love.graphics.setCanvas(shadowCanvas)
                     love.graphics.rectangle(
                         'fill',
-                        xTileWidthOffsetX * scaleX,
-                        (yTileHeightOffsetY + i*tileSize) * scaleY,
-                        tileSize * scaleX,
-                        tileSize * scaleY
+                        xTileWidthOffsetX,
+                        yTileHeightOffsetY + i*tileSize,
+                        tileSize,
+                        tileSize
                     )
                     love.graphics.setCanvas(objectCanvas)
+                    love.graphics.setColor(0,0,0,0)
                     love.graphics.rectangle(
                         'fill',
-                        xTileWidthOffsetX * scaleX,
-                        (yTileHeightOffsetY + i*tileSize) * scaleY,
-                        tileSize * scaleX,
-                        tileSize * scaleY
+                        xTileWidthOffsetX,
+                        yTileHeightOffsetY + i*tileSize,
+                        tileSize,
+                        tileSize
                     )
                     love.graphics.setBlendMode('alpha')
                     love.graphics.setColor(1,1,1,1)
@@ -446,13 +448,13 @@ function love.draw()
 
                 love.graphics.setShader(gradientShader)
                 love.graphics.setColor(0,0,0,0)
-                gradientShader:send("rect", {xTileWidthOffsetX * scaleX, yTileHeightOffsetY * scaleY + z*scaleY + tileSize, tileSize * scaleX, tileSize * scaleY * zHeight * -1})
+                gradientShader:send("rect", {xTileWidthOffsetX, yTileHeightOffsetY + z + tileSize, tileSize, tileSize * zHeight * -1})
                 love.graphics.rectangle(
                     'fill',
-                    xTileWidthOffsetX*scaleX + gradientGleam*scaleX,
+                    xTileWidthOffsetX + gradientGleam,
                     (yTileHeightOffsetY + z + tileSize) * scaleY,
-                    tileSize * scaleX - gradientGleam*scaleX,
-                    tileSize * scaleX * zHeight * -1
+                    tileSize - gradientGleam,
+                    tileSize * zHeight * -1
                 )
                 love.graphics.setColor(1,1,1,1)
                 love.graphics.setShader()
@@ -462,21 +464,40 @@ function love.draw()
                 local time = love.timer.getTime()
                 local sway = math.sin(time + yC) * 0.04
 
-                love.graphics.setShader(spriteShader)
-                spriteShader:send("divideBy", 1)
-                spriteShader:send("angle", angle)   
-                spriteShader:send("objectCanvas", colorMapCanvas)
-                spriteShader:send("spriteLeftX", xTileWidthOffsetX * scaleX + 32/2 * scaleX - 480/2 * scaleX)    
-                spriteShader:send("spriteTopY", yTileHeightOffsetY * scaleY - 224*scaleY)
-                spriteShader:send("spriteHeight",480.0*scaleX)
-                spriteShader:send("spriteWidth",960.0*scaleY)
-                spriteShader:send("spriteBase", 250*scaleY)
-                spriteShader:send("xstart", 193*scaleX)
-                spriteShader:send("xend", 320*scaleX)
-                spriteShader:send("shadowSize", 140)
-                spriteShader:send("opacity", 1.0)
-                spriteShader:send("canvasSize", {windowX, windowY})
-        
+                -- if (angle % 360 >= 0 and angle % 359 <= 170) then
+                    love.graphics.setShader(spriteShader)
+                    spriteShader:send("divideBy", 1)
+                    --spriteShaderFromLight:send("lightPosition", {playerX - cameraX, playerY - cameraY})
+                    spriteShader:send("angle", angle)   
+                    spriteShader:send("objectCanvas", colorMapCanvas)
+                    spriteShader:send("spriteLeftX", xTileWidthOffsetX + 32/2 - 480/2)    
+                    spriteShader:send("spriteTopY", yTileHeightOffsetY - 224)
+                    spriteShader:send("spriteHeight",480.0*scaleX)
+                    spriteShader:send("spriteWidth",960.0*scaleY)
+                    spriteShader:send("spriteBase", 250*scaleY)
+                    spriteShader:send("xstart", 193*scaleX)
+                    spriteShader:send("xend", 320*scaleX)
+                    spriteShader:send("shadowSize", 250) --140
+                    spriteShader:send("opacity", 1.0)
+                    spriteShader:send("canvasSize", {windowX, windowY})
+                -- elseif (angle % 359 > 170 and angle % 359 < 360) then
+                --     love.graphics.setShader(spriteShaderFromLight)
+                --     spriteShaderFromLight:send("divideBy", 1)
+                --     spriteShaderFromLight:send("lightPosition", {playerX - cameraX, playerY - cameraY})
+                --     --spriteShaderFromLight:send("angle", angle)   
+                --     spriteShaderFromLight:send("objectCanvas", colorMapCanvas)
+                --     spriteShaderFromLight:send("spriteLeftX", xTileWidthOffsetX + 32/2 - 480/2)    
+                --     spriteShaderFromLight:send("spriteTopY", yTileHeightOffsetY - 224)
+                --     spriteShaderFromLight:send("spriteHeight",480.0*scaleX)
+                --     spriteShaderFromLight:send("spriteWidth",960.0*scaleY)
+                --     spriteShaderFromLight:send("spriteBase", 250*scaleY)
+                --     spriteShaderFromLight:send("xstart", 193*scaleX)
+                --     spriteShaderFromLight:send("xend", 320*scaleX)
+                --     spriteShaderFromLight:send("shadowSize", 250) --140
+                --     spriteShaderFromLight:send("opacity", 1.0)
+                --     spriteShaderFromLight:send("canvasSize", {windowX, windowY})
+                -- end
+
                 love.graphics.setCanvas(shadowCanvas)
                 love.graphics.draw(             --Draw the trunk shadow
                     treeSheet,
@@ -490,9 +511,15 @@ function love.draw()
                     224        
                 )
 
-                spriteShader:send("shadowSize", 250)
-                spriteShader:send("xstart",150)
-                spriteShader:send("xend",350)
+                -- if (angle % 360 >= 0 and angle % 360 < 170) then
+                    spriteShader:send("shadowSize",250)
+                    spriteShader:send("xstart",150)
+                    spriteShader:send("xend",350)
+                -- elseif (angle % 360 > 170 and angle % 360 < 360) then
+                --     spriteShaderFromLight:send("shadowSize",250)
+                --     spriteShaderFromLight:send("xstart",150)
+                --     spriteShaderFromLight:send("xend",350)
+                -- end
                 love.graphics.setCanvas(shadowCanvas)
                 love.graphics.draw(             --Draw the tree leaves shadow
                     treeSheet,
@@ -589,9 +616,9 @@ function love.draw()
             flipX = -1 
             flipOffsetX = 200/2
         end
-    
-        local spriteNumber = spriteMap["Cody"][playerState][playerDirection][playerFrame]  
 
+        local spriteNumber = spriteMap["Cody"][playerState][playerDirection][playerFrame]  
+        
         love.graphics.setCanvas(tempCanvas)
         love.graphics.clear()
         love.graphics.draw(
@@ -606,29 +633,30 @@ function love.draw()
             0
         )
 
-        love.graphics.setShader(spriteShader)
-        spriteShader:send("angle", angle)   
-        spriteShader:send("objectCanvas", colorMapCanvas)
-        spriteShader:send("spriteLeftX", characterScreenX + 32/2 - 200/2)    
-        spriteShader:send("spriteTopY", characterScreenY - 128)
-        spriteShader:send("spriteHeight",200.0)
-        spriteShader:send("spriteWidth",200.0)
-        spriteShader:send("spriteBase", ((200-112)/2+80))
-        spriteShader:send("xstart", ((200-112)/2+30)) --43
-        spriteShader:send("xend", ((200-112)/2+80)) --71
-        spriteShader:send("shadowSize", 70.0)
-        spriteShader:send("divideBy", -1*playerZ/64 + 1)
-        spriteShader:send("opacity", 1 - -1*playerZ/3/64)
-        spriteShader:send("canvasSize", {windowX, windowY})
-
-        love.graphics.setCanvas(shadowCanvas)
-        love.graphics.draw(
-            tempCanvas,
-            characterScreenX + 32/2 - 200/2,
-            characterScreenY - 128       --128 = base + (200-112)/2 
-        )
-
-        love.graphics.setShader()
+        --Draw the player shadow if daytime. 
+        -- if (angle % 359 >= 0 and angle % 359 < 170) then 
+            love.graphics.setShader(spriteShader)
+            spriteShader:send("angle", angle)   
+            spriteShader:send("objectCanvas", colorMapCanvas)
+            spriteShader:send("spriteLeftX", characterScreenX + 32/2 - 200/2)    
+            spriteShader:send("spriteTopY", characterScreenY - 128 + playerShadowZ)
+            spriteShader:send("spriteHeight",200.0)
+            spriteShader:send("spriteWidth",200.0)
+            spriteShader:send("spriteBase", ((200-112)/2+80))
+            spriteShader:send("xstart", ((200-112)/2+30)) --43
+            spriteShader:send("xend", ((200-112)/2+80)) --71
+            spriteShader:send("shadowSize", 70.0)
+            spriteShader:send("divideBy", -1*(playerZ-playerShadowZ)/64 + 1)
+            spriteShader:send("opacity", 1 - -1*(playerZ-playerShadowZ)/5/64)
+            spriteShader:send("canvasSize", {windowX, windowY})
+            love.graphics.setCanvas(shadowCanvas)
+            love.graphics.draw(
+                tempCanvas,
+                characterScreenX + 32/2 - 200/2,
+                characterScreenY - 128 + playerShadowZ --+ playerZ       --128 = base + (200-112)/2 
+            )
+            love.graphics.setShader()
+        -- end
         
         love.graphics.setCanvas(objectCanvas)
         love.graphics.draw(
@@ -640,6 +668,7 @@ function love.draw()
         ::continueY::
     end
 
+    --DRAW THE GRUNGE OVERLAY
     love.graphics.setCanvas(offscreenCanvas)
     love.graphics.setColor(2,2,2,.8)
     love.graphics.setBlendMode("multiply", "premultiplied")
@@ -652,24 +681,62 @@ function love.draw()
         1
     )
     love.graphics.setBlendMode("alpha")
-    
+
+    local alpha = 1 - (math.sin(math.rad(angle)) + 1)/2
+
+    local spotLightSize = 200
+
+    --DRAW THE SHADOWS, WHETHER FROM THE SUN OR FROM THE PLAYER'S LIGHT
     love.graphics.setColor(1,1,1,1)
     love.graphics.setCanvas(shadowCanvas)
-    love.graphics.setShader(shadowShader)
-    shadowShader:send("angle", angle)
-    shadowShader:send("shadowSize", 32)
-    shadowShader:send("objectCanvas", colorMapCanvas) 
+    --if (angle % 359 >= 0 and angle % 359 <= 170) then 
+        love.graphics.setShader(shadowShader)
+        shadowShader:send("angle", angle)
+        shadowShader:send("shadowSize", 32)
+        shadowShader:send("objectCanvas", colorMapCanvas) 
+    -- elseif (angle % 359 > 170 and angle % 359 < 360) then
+    --     love.graphics.setShader(shadowShaderFromLight)
+    --     shadowShaderFromLight:send("lightPosition", {playerX - cameraX, playerY - cameraY})
+    --     shadowShaderFromLight:send("shadowSize", spotLightSize)    
+    --     shadowShaderFromLight:send("objectCanvas", colorMapCanvas)
+    --end
     love.graphics.draw(colorMapCanvas)
     love.graphics.setShader()
-    love.graphics.setCanvas(offscreenCanvas)
-    if showColorMap == true then love.graphics.draw(colorMapCanvas) end
-    love.graphics.setColor(1,1,1,.3)
-    love.graphics.draw(shadowCanvas, 0, 0)
+
+    --love.graphics.setColor(0,0,0.1,alpha)
+    --love.graphics.rectangle('fill',0,0,shadowCanvas:getWidth(),shadowCanvas:getHeight())
     love.graphics.setColor(1,1,1,1)
-    love.graphics.draw(objectCanvas, 0, 0)
+
+    --love.graphics.setCanvas(offscreenCanvas)
+    if showColorMap == true then love.graphics.draw(colorMapCanvas) end
+
+    -- love.graphics.setCanvas(objectCanvas)
+    -- love.graphics.setColor(1,1,1,alpha*2)
+    -- love.graphics.draw(nightCanvas,0,0)                 --Draw night canvas over objects
+    
+    -- if (angle % 360 >= 0 and angle % 360 <= 180) then   --Draw the shadows and night canvas over the offscreen canvas
+    --     --love.graphics.setColor(1,1,1,.8)
+    --     love.graphics.setCanvas(nightCanvas)
+        love.graphics.setColor(1,1,1,0.5 * (1 - math.abs((angle - 320) % 360 - 130)/130))
+    --     love.graphics.draw(shadowCanvas,0,0)
+        love.graphics.setCanvas(offscreenCanvas)
+    -- love.graphics.draw(nightCanvas,0,0)
+    -- elseif (angle % 359 > 180 and angle % 359 <= 359) then
+    --     love.graphics.setCanvas(nightCanvas)
+    --     love.graphics.setColor(1,1,1,1)
+        love.graphics.draw(shadowCanvas, 0, 0)              --Draws the shadows onto the night canvas
+    --     love.graphics.setCanvas(offscreenCanvas)
+    --     love.graphics.setColor(1,1,1,alpha)
+    --     love.graphics.draw(nightCanvas, 0, 0)               --Draws the night canvas (with shadows) onto the offscreen canvas
+    -- end
+    
+    love.graphics.setCanvas(offscreenCanvas)
+    love.graphics.setColor(1,1,1,1)
+    love.graphics.draw(objectCanvas, 0, 0)              --Then draw the objects onto the offscreen canvas as well
 
     love.graphics.setCanvas()
 
+    --Reduce viewport but scale up to window size
     local viewportX = 800
     local viewportY = 600
     local quadX = playerX - viewportX / 2
@@ -683,8 +750,11 @@ function love.draw()
 
     local quad = love.graphics.newQuad(quadX, quadY, viewportX, viewportY, windowX, windowY)
     
+    lutShader:send("angle", angle % 359)
+    lutShader:send("lutImage", lutImage)
+    love.graphics.setShader(lutShader)
     love.graphics.draw(offscreenCanvas,quad,0,0,0,scale,scale)
-
+    love.graphics.setShader()
 
     love.graphics.print("Tiles Horizontal: " .. tilesHorizontal, 10, 10)
     love.graphics.print("Tiles Vertical: " .. tilesVertical, 10, 30)
@@ -709,15 +779,15 @@ function prng(seed)
 end
 
 function moveCharacter(dx, dy, dz)
-    local newx = math.floor(playerX + dx)
-    local newy = math.floor(playerY + dy)
-    local newz = math.floor(playerZ + dz)
+    local newx = math.floor(playerX + dx + .5)
+    local newy = math.floor(playerY + dy + .5)
+    local newz = math.floor(playerZ + dz + .5)
 
-    --local canMoveXY = canMoveTo(newx, newy, playerZ)
-    --local canMoveZ = canMoveTo(playerX, playerY, newz)
+    local canMoveXY = canMoveTo(newx, newy, playerZ)
+    local canMoveZ = canMoveTo(playerX, playerY, newz)
 
-    local canMoveXY = true
-    local canMoveZ = true
+    --local canMoveXY = true
+    --local canMoveZ = true
 
     if canMoveXY then
         playerX = newx
@@ -736,9 +806,9 @@ function moveCharacter(dx, dy, dz)
 end
 
 function canMoveTo(newX, newY, newZ)
-    local left = newX
+    local left = newX 
     local right = newX + 32 --I need to get width of character here instead of 32
-    local top = newY - 5    --I need to get the height of character feet here instead of 5
+    local top = newY - 8    --I need to get the height of character feet here instead of 8
     local bottom = newY
 
     topLeftTile = getTile(left, top);
@@ -746,19 +816,21 @@ function canMoveTo(newX, newY, newZ)
     bottomLeftTile = getTile(left, bottom);
     bottomRightTile = getTile(right, bottom);
 
+    playerShadowZ = bottomLeftTile.z    --Gets the z value below player even if jumping. This is where shadow should be. 
+
     if (topLeftTile.v > 500 or topRightTile.v > 500  or bottomLeftTile.v > 500 or bottomRightTile.v > 500 or
     topLeftTile.z < newZ or topRightTile.z < newZ or bottomLeftTile.z < newZ or bottomRightTile.z < newZ) then
+        --print("Values: TopLeft = " .. topLeftTile.v .. "; TopRight = " .. topRightTile.v .. "; BottomLeft = " .. bottomLeftTile.v .. "; BottomRight = " .. bottomRightTile.v)
+        --print("Z Values: TopLeft = " .. topLeftTile.z .. "; TopRight = " .. topRightTile.z .. "; BottomLeft = " .. bottomLeftTile.z .. "; BottomRight = " .. bottomRightTile.z)
         return false;
     end
-
-    print(topLeftTile.v)
 
     return true;
 end
 
 function getTile(x, y)
-    local tileX = math.floor(x / 32)
-    local tileY = math.floor(y / 32)
+    local tileX = math.floor(x / 32) + 1        -- +1 because no 0 index
+    local tileY = math.floor(y / 32) + 1        -- +1 because no 0 index
     return {
         v=mapArray[tileY][tileX][1],
         z=mapArray[tileY][tileX][2]
