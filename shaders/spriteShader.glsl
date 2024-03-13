@@ -88,7 +88,7 @@ vec4 effect(vec4 color, Image texture, vec2 texture_coords, vec2 screen_coords) 
                 normalizedScreenCoords += canvasAngleMove;
                 pos += spriteAngleMove;
                 colorMapPixel = Texel(objectCanvas, normalizedScreenCoords); //shadow_coords);
-                //if (colorMapPixel.b != faceHeight) return vec4(0.0); //If an occluder in way...
+                if (colorMapPixel.b != faceHeight) return vec4(0.0); //If an occluder in way...
                 if (normalizedScreenCoords.y >= baseScreenY - 0.003 &&
                     normalizedScreenCoords.y <= baseScreenY + 0.003 && 
                     normalizedScreenCoords.x >= baseScreenX1 &&
@@ -105,5 +105,6 @@ vec4 effect(vec4 color, Image texture, vec2 texture_coords, vec2 screen_coords) 
             }
         }
     //}
-    return vec4(0.0); //We're only drawing the shadow 
+    return vec4(0.0); //We're only drawing the shadow
+    //return pixel; 
 }

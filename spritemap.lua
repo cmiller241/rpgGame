@@ -12,6 +12,12 @@ local spriteMap = {
             Right = {35,36,37,38,39,40},
             Left = {35,36,37,38,39,40}                
         },
+        ["Jumping-Start"] = {
+            Down={13},
+            Up={13},
+            Right={13},
+            Left={13}
+        },
         ["Jumping-Up"] = {
             Down = {11},
             Up = {11},
