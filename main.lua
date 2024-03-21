@@ -1,7 +1,7 @@
 local scaleX = 1
 local scaleY = 1
-local windowX = 1300
-local windowY = 360 + 32*10
+local windowX = 640 + 32*10
+local windowY = 480 + 32*7
 local increasing = true
 local playerX = 200
 local playerY = 250
@@ -46,6 +46,7 @@ local objectCanvas = love.graphics.newCanvas(windowX,windowY)
 local shadowCanvas = love.graphics.newCanvas(windowX,windowY)
 local colorMapCanvas = love.graphics.newCanvas(windowX,windowY)
 local offscreenCanvas = love.graphics.newCanvas(windowX,windowY)
+local intermediateCanvas = love.graphics.newCanvas(windowX,windowY)
 local nightCanvas = love.graphics.newCanvas(windowX,windowY)
 local tempCanvas = love.graphics.newCanvas(200,200)
 local gradientShader = love.graphics.newShader("shaders/gradientShader.glsl")
@@ -60,6 +61,7 @@ local spriteShader = love.graphics.newShader("shaders/spriteShader.glsl")
 local spotlightShader = love.graphics.newShader("shaders/spotlightShader.glsl")
 local spriteShaderFromLight = love.graphics.newShader("shaders/spriteShaderFromLight.glsl")
 local lutShader = love.graphics.newShader("shaders/lutShader.glsl")
+local ultimateShader = love.graphics.newShader("shaders/ultimateShader.glsl")
 
 
 function love.load()
@@ -100,11 +102,14 @@ function love.load()
 end
 
 function love.resize(w, h)
+    windowX = w
+    windowY = h
     objectCanvas = love.graphics.newCanvas(windowX,windowY)
     shadowCanvas = love.graphics.newCanvas(windowX,windowY)   
     colorMapCanvas = love.graphics.newCanvas(windowX,windowY)
     offscreenCanvas = love.graphics.newCanvas(windowX,windowY)
     nightCanvas = love.graphics.newCanvas(windowX,windowY)
+    intermediateCanvas = love.graphics.newCanvas(windowX, windowY)
     tempCanvas = love.graphics.newCanvas(200,200)
 end
 
@@ -157,7 +162,6 @@ function love.update(dt)
         playerDirection = "Up"
     end
     if love.keyboard.isDown("down") then
-        --playerY = playerY + playerSpeed * dt
         playeray = .5
         playerState = "Walking"
         playerDirection = "Down"
@@ -228,8 +232,6 @@ end
 
 
 function love.draw()
-    --love.graphics.setCanvas()
-    --love.graphics.clear()
     love.graphics.setCanvas(shadowCanvas)
     love.graphics.clear()
     love.graphics.setCanvas(objectCanvas)
@@ -238,7 +240,7 @@ function love.draw()
     love.graphics.clear()
     love.graphics.setCanvas(offscreenCanvas)
     love.graphics.clear()
-    love.graphics.setCanvas(nightCanvas)
+    love.graphics.setCanvas(intermediateCanvas)
     love.graphics.clear()
 
     --local windowWidth, windowHeight = love.graphics.getDimensions()
@@ -452,7 +454,7 @@ function love.draw()
                 love.graphics.rectangle(
                     'fill',
                     xTileWidthOffsetX + gradientGleam,
-                    (yTileHeightOffsetY + z + tileSize) * scaleY,
+                    yTileHeightOffsetY + z + tileSize,
                     tileSize - gradientGleam,
                     tileSize * zHeight * -1
                 )
@@ -570,37 +572,37 @@ function love.draw()
             if xC < 1 or xC > #mapArray[yC - 1] then goto continueX end
             local tile = mapArray[yC - 1][xC][1]
             local yTileHeightOffsetY = (y-2)*tileSize - offsetY;
-            if tile == 10 then
-                love.graphics.setCanvas(objectCanvas)
-                local time = love.timer.getTime()
-                local windEffect = math.sin(time + yC) * 0.1
-                local xAdjustment = windEffect * 27 -- 27 is the grassHeight
-                love.graphics.draw(
-                    grassSheet,
-                    grassQuad,
-                    (xTileWidthOffsetX - xAdjustment-5),
-                    (yTileHeightOffsetY - 5),
-                    0,
-                    1,
-                    1,
-                    0, 0,
-                    windEffect, 0
-                )
-                windEffect = math.sin(time + yC + 3) * 0.1
-                xAdjustment = windEffect * 27 -- 27 is the grassHeight
-                love.graphics.draw(
-                    grassSheet,
-                    grassQuad,
-                    (xTileWidthOffsetX - xAdjustment),
-                    (yTileHeightOffsetY + 8),
-                    0,
-                    1,
-                    1,
-                    0, 0,
-                    windEffect, 0
-                )
-                love.graphics.setCanvas(offscreenCanvas)
-            end
+            -- if tile == 10 then
+            --     love.graphics.setCanvas(objectCanvas)
+            --     local time = love.timer.getTime()
+            --     local windEffect = math.sin(time + yC) * 0.1
+            --     local xAdjustment = windEffect * 27 -- 27 is the grassHeight
+            --     love.graphics.draw(
+            --         grassSheet,
+            --         grassQuad,
+            --         (xTileWidthOffsetX - xAdjustment-5),
+            --         (yTileHeightOffsetY - 5),
+            --         0,
+            --         1,
+            --         1,
+            --         0, 0,
+            --         windEffect, 0
+            --     )
+            --     windEffect = math.sin(time + yC + 3) * 0.1
+            --     xAdjustment = windEffect * 27 -- 27 is the grassHeight
+            --     love.graphics.draw(
+            --         grassSheet,
+            --         grassQuad,
+            --         (xTileWidthOffsetX - xAdjustment),
+            --         (yTileHeightOffsetY + 8),
+            --         0,
+            --         1,
+            --         1,
+            --         0, 0,
+            --         windEffect, 0
+            --     )
+            --     love.graphics.setCanvas(offscreenCanvas)
+            -- end
 
             ::continueX::
         end
@@ -668,77 +670,50 @@ function love.draw()
         ::continueY::
     end
 
-    --DRAW THE GRUNGE OVERLAY
-    love.graphics.setCanvas(offscreenCanvas)
-    love.graphics.setColor(2,2,2,.8)
-    love.graphics.setBlendMode("multiply", "premultiplied")
-    love.graphics.draw(
-        grunge,
-        cameraX * -1,
-        cameraY * -1,
-        0,
-        1,
-        1
-    )
-    love.graphics.setBlendMode("alpha")
+    -- --DRAW THE GRUNGE OVERLAY
+    -- love.graphics.setCanvas(offscreenCanvas)
+    -- love.graphics.setColor(2,2,2,.8)
+    -- love.graphics.setBlendMode("multiply", "premultiplied")
+    -- love.graphics.draw(
+    --     grunge,
+    --     cameraX * -1,
+    --     cameraY * -1,
+    --     0,
+    --     1,
+    --     1
+    -- )
+    -- love.graphics.setBlendMode("alpha")
 
-    local alpha = 1 - (math.sin(math.rad(angle)) + 1)/2
-
-    local spotLightSize = 200
-
-    --DRAW THE SHADOWS, WHETHER FROM THE SUN OR FROM THE PLAYER'S LIGHT
+    local noShadows = 0
+    if (angle % 360 > 180 and angle % 360 < 360) then
+        noShadows = 1
+    else 
+        noShadows = 0
+    end
+    love.graphics.setCanvas(intermediateCanvas)
+    ultimateShader:send("offscreenCanvas", offscreenCanvas)
+    ultimateShader:send("objectCanvas", objectCanvas)
+    ultimateShader:send("shadowCanvas", shadowCanvas)
+    ultimateShader:send("colorMapCanvas", colorMapCanvas)
+    ultimateShader:send("lutImage", lutImage)
+    ultimateShader:send("shadowAngle", angle)
+    ultimateShader:send("shadowSize", 32)
+    ultimateShader:send("shadowAlpha", 0.5 * (1 - math.abs((angle - 360) % 360 - 90)/90))
+    --ultimateShader:send("lutOld", 0.0)
+    --ultimateShader:send("lutNew", 96.0)
+    ultimateShader:send("spotlight", {playerX + 8 - cameraX, playerY - cameraY})
+    --ultimateShader:send("spotlightColor", {0.8, 0.8, 0, 1.0})
+    ultimateShader:send("canvasSize", {windowX, windowY})
+    ultimateShader:send("noShadows", noShadows)
+    love.graphics.setShader(ultimateShader)
     love.graphics.setColor(1,1,1,1)
-    love.graphics.setCanvas(shadowCanvas)
-    --if (angle % 359 >= 0 and angle % 359 <= 170) then 
-        love.graphics.setShader(shadowShader)
-        shadowShader:send("angle", angle)
-        shadowShader:send("shadowSize", 32)
-        shadowShader:send("objectCanvas", colorMapCanvas) 
-    -- elseif (angle % 359 > 170 and angle % 359 < 360) then
-    --     love.graphics.setShader(shadowShaderFromLight)
-    --     shadowShaderFromLight:send("lightPosition", {playerX - cameraX, playerY - cameraY})
-    --     shadowShaderFromLight:send("shadowSize", spotLightSize)    
-    --     shadowShaderFromLight:send("objectCanvas", colorMapCanvas)
-    --end
-    love.graphics.draw(colorMapCanvas)
-    love.graphics.setShader()
-
-    --love.graphics.setColor(0,0,0.1,alpha)
-    --love.graphics.rectangle('fill',0,0,shadowCanvas:getWidth(),shadowCanvas:getHeight())
-    love.graphics.setColor(1,1,1,1)
-
-    --love.graphics.setCanvas(offscreenCanvas)
-    if showColorMap == true then love.graphics.draw(colorMapCanvas) end
-
-    -- love.graphics.setCanvas(objectCanvas)
-    -- love.graphics.setColor(1,1,1,alpha*2)
-    -- love.graphics.draw(nightCanvas,0,0)                 --Draw night canvas over objects
-    
-    -- if (angle % 360 >= 0 and angle % 360 <= 180) then   --Draw the shadows and night canvas over the offscreen canvas
-    --     --love.graphics.setColor(1,1,1,.8)
-    --     love.graphics.setCanvas(nightCanvas)
-        love.graphics.setColor(1,1,1,0.5 * (1 - math.abs((angle - 320) % 360 - 130)/130))
-    --     love.graphics.draw(shadowCanvas,0,0)
-        love.graphics.setCanvas(offscreenCanvas)
-    -- love.graphics.draw(nightCanvas,0,0)
-    -- elseif (angle % 359 > 180 and angle % 359 <= 359) then
-    --     love.graphics.setCanvas(nightCanvas)
-    --     love.graphics.setColor(1,1,1,1)
-        love.graphics.draw(shadowCanvas, 0, 0)              --Draws the shadows onto the night canvas
-    --     love.graphics.setCanvas(offscreenCanvas)
-    --     love.graphics.setColor(1,1,1,alpha)
-    --     love.graphics.draw(nightCanvas, 0, 0)               --Draws the night canvas (with shadows) onto the offscreen canvas
-    -- end
-    
-    love.graphics.setCanvas(offscreenCanvas)
-    love.graphics.setColor(1,1,1,1)
-    love.graphics.draw(objectCanvas, 0, 0)              --Then draw the objects onto the offscreen canvas as well
+    love.graphics.rectangle("fill", 0, 0, windowX, windowY)  
 
     love.graphics.setCanvas()
 
     --Reduce viewport but scale up to window size
-    local viewportX = 800
-    local viewportY = 600
+    local viewportX = 640
+    local viewportY = 480
     local quadX = playerX - viewportX / 2
     local quadY = playerY - viewportY / 2
     quadX = math.max(0, math.min(quadX, windowX/2 - viewportX/2))
@@ -750,12 +725,10 @@ function love.draw()
 
     local quad = love.graphics.newQuad(quadX, quadY, viewportX, viewportY, windowX, windowY)
     
-    lutShader:send("angle", angle % 359)
-    lutShader:send("lutImage", lutImage)
-    love.graphics.setShader(lutShader)
-    love.graphics.draw(offscreenCanvas,quad,0,0,0,scale,scale)
+    love.graphics.draw(intermediateCanvas,quad,0,0,0,scale,scale)
     love.graphics.setShader()
 
+    love.graphics.setColor(1,1,1,1)
     love.graphics.print("Tiles Horizontal: " .. tilesHorizontal, 10, 10)
     love.graphics.print("Tiles Vertical: " .. tilesVertical, 10, 30)
     love.graphics.print("Tilesize vertical is " .. spriteSheet:getHeight() / tileSize, 10, 50)
@@ -763,10 +736,14 @@ function love.draw()
     love.graphics.print("Player X: " .. playerX, 10, 90)
     love.graphics.print("Player Y: " .. playerY, 10, 110)   
     love.graphics.print("Player Z: " .. playerZ, 10, 130)
-    love.graphics.print("The number of sprites is " .. #sprites, 10, 150)
-    love.graphics.print("The zoom value is " .. scaleX, 10, 170)
-    love.graphics.print("The angle is " .. angle, 10, 190)
-    love.graphics.print("FPS: " .. love.timer.getFPS(), 10, 210)
+    love.graphics.print("PlayerScreenX: " .. (playerX - cameraX), 10, 150)
+    love.graphics.print("PlayerScreenY: " .. (playerY - cameraY), 10, 170)
+    love.graphics.print("The number of sprites is " .. #sprites, 10, 190)
+    love.graphics.print("The zoom value is " .. scaleX, 10, 210)
+    love.graphics.print("The angle is " .. angle, 10, 230)
+    love.graphics.print("FPS: " .. love.timer.getFPS(), 10, 250)
+    love.graphics.print("WindowX: " .. windowX, 10, 270)    
+    love.graphics.print("WindowY: " .. windowY, 10, 290)    
 
 end
 
