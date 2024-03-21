@@ -1,7 +1,7 @@
-# rpgGame
-This game is an attempt to create a JavaScript RPG utilizing popular topdown, platformer, and 2d space flight mechanics in a 2d context (no-webGL). 
+# Scattered Verses
+This game is an attempt to create a Love2d RPG with custom made shaders. 
 
-## Features
+## Tasklist
 - [x] Create topdown jump system for player
 - [x] Create topdown platform system for z-index
 - [x] Create shadow casting for sprites and elevated terrain
