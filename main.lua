@@ -62,6 +62,7 @@ local spotlightShader = love.graphics.newShader("shaders/spotlightShader.glsl")
 local spriteShaderFromLight = love.graphics.newShader("shaders/spriteShaderFromLight.glsl")
 local lutShader = love.graphics.newShader("shaders/lutShader.glsl")
 local ultimateShader = love.graphics.newShader("shaders/ultimateShader.glsl")
+local ultimateSpriteShader = love.graphics.newShader("shaders/ultimateSpriteShader.glsl")
 
 
 function love.load()
@@ -242,6 +243,7 @@ function love.draw()
     love.graphics.clear()
     love.graphics.setCanvas(intermediateCanvas)
     love.graphics.clear()
+    local randomIt = math.random(0,0)
 
     --local windowWidth, windowHeight = love.graphics.getDimensions()
     local windowWidth = windowX
@@ -466,39 +468,33 @@ function love.draw()
                 local time = love.timer.getTime()
                 local sway = math.sin(time + yC) * 0.04
 
-                -- if (angle % 360 >= 0 and angle % 359 <= 170) then
-                    love.graphics.setShader(spriteShader)
-                    spriteShader:send("divideBy", 1)
-                    --spriteShaderFromLight:send("lightPosition", {playerX - cameraX, playerY - cameraY})
-                    spriteShader:send("angle", angle)   
-                    spriteShader:send("objectCanvas", colorMapCanvas)
-                    spriteShader:send("spriteLeftX", xTileWidthOffsetX + 32/2 - 480/2)    
-                    spriteShader:send("spriteTopY", yTileHeightOffsetY - 224)
-                    spriteShader:send("spriteHeight",480.0*scaleX)
-                    spriteShader:send("spriteWidth",960.0*scaleY)
-                    spriteShader:send("spriteBase", 250*scaleY)
-                    spriteShader:send("xstart", 193*scaleX)
-                    spriteShader:send("xend", 320*scaleX)
-                    spriteShader:send("shadowSize", 250) --140
-                    spriteShader:send("opacity", 1.0)
-                    spriteShader:send("canvasSize", {windowX, windowY})
-                -- elseif (angle % 359 > 170 and angle % 359 < 360) then
-                --     love.graphics.setShader(spriteShaderFromLight)
-                --     spriteShaderFromLight:send("divideBy", 1)
-                --     spriteShaderFromLight:send("lightPosition", {playerX - cameraX, playerY - cameraY})
-                --     --spriteShaderFromLight:send("angle", angle)   
-                --     spriteShaderFromLight:send("objectCanvas", colorMapCanvas)
-                --     spriteShaderFromLight:send("spriteLeftX", xTileWidthOffsetX + 32/2 - 480/2)    
-                --     spriteShaderFromLight:send("spriteTopY", yTileHeightOffsetY - 224)
-                --     spriteShaderFromLight:send("spriteHeight",480.0*scaleX)
-                --     spriteShaderFromLight:send("spriteWidth",960.0*scaleY)
-                --     spriteShaderFromLight:send("spriteBase", 250*scaleY)
-                --     spriteShaderFromLight:send("xstart", 193*scaleX)
-                --     spriteShaderFromLight:send("xend", 320*scaleX)
-                --     spriteShaderFromLight:send("shadowSize", 250) --140
-                --     spriteShaderFromLight:send("opacity", 1.0)
-                --     spriteShaderFromLight:send("canvasSize", {windowX, windowY})
-                -- end
+                love.graphics.setShader(spriteShader)
+                love.graphics.setBlendMode('lighten', 'premultiplied')
+                spriteShader:send("divideBy", 1)
+                spriteShader:send("angle", angle)   
+                spriteShader:send("colorMapCanvas", colorMapCanvas)
+                spriteShader:send("spriteLeftX", xTileWidthOffsetX + 32/2 - 480/2)    
+                spriteShader:send("spriteTopY", yTileHeightOffsetY - 224)
+                spriteShader:send("spriteHeight",480.0*scaleX)
+                spriteShader:send("spriteWidth",960.0*scaleY)
+                spriteShader:send("spriteBase", 250*scaleY)
+                spriteShader:send("xstart", 193*scaleX)
+                spriteShader:send("xend", 320*scaleX)
+                spriteShader:send("shadowSize", 250) --140
+                spriteShader:send("opacity", 1.0)
+                spriteShader:send("canvasSize", {windowX, windowY})
+                spriteShader:send("spotlight", {playerX + 8 - cameraX, playerY - cameraY + playerZ/2})
+                -- Calculate the distance between the spotlight and the tree trunk
+                local dx = (playerX + 8 - cameraX) - (xTileWidthOffsetX)
+                local dy = (playerY - cameraY + playerZ/2) - (yTileHeightOffsetY)
+                local distance = math.sqrt(dx * dx + dy * dy)
+
+                -- Set the showSpotlight uniform based on the distance
+                if distance < 100 then                                  --200 represents the radius of the spotlight
+                    spriteShader:send("showSpotlight", 1)
+                else
+                    spriteShader:send("showSpotlight", 0)
+                end
 
                 love.graphics.setCanvas(shadowCanvas)
                 love.graphics.draw(             --Draw the trunk shadow
@@ -513,15 +509,9 @@ function love.draw()
                     224        
                 )
 
-                -- if (angle % 360 >= 0 and angle % 360 < 170) then
-                    spriteShader:send("shadowSize",250)
-                    spriteShader:send("xstart",150)
-                    spriteShader:send("xend",350)
-                -- elseif (angle % 360 > 170 and angle % 360 < 360) then
-                --     spriteShaderFromLight:send("shadowSize",250)
-                --     spriteShaderFromLight:send("xstart",150)
-                --     spriteShaderFromLight:send("xend",350)
-                -- end
+                spriteShader:send("shadowSize",250)
+                spriteShader:send("xstart",150)
+                spriteShader:send("xend",350)
                 love.graphics.setCanvas(shadowCanvas)
                 love.graphics.draw(             --Draw the tree leaves shadow
                     treeSheet,
@@ -534,6 +524,7 @@ function love.draw()
                     224,
                     224        
                 )
+                love.graphics.setBlendMode('alpha')
 
         
                 love.graphics.setShader()
@@ -637,28 +628,31 @@ function love.draw()
 
         --Draw the player shadow if daytime. 
         -- if (angle % 359 >= 0 and angle % 359 < 170) then 
-            love.graphics.setShader(spriteShader)
-            spriteShader:send("angle", angle)   
-            spriteShader:send("objectCanvas", colorMapCanvas)
-            spriteShader:send("spriteLeftX", characterScreenX + 32/2 - 200/2)    
-            spriteShader:send("spriteTopY", characterScreenY - 128 + playerShadowZ)
-            spriteShader:send("spriteHeight",200.0)
-            spriteShader:send("spriteWidth",200.0)
-            spriteShader:send("spriteBase", ((200-112)/2+80))
-            spriteShader:send("xstart", ((200-112)/2+30)) --43
-            spriteShader:send("xend", ((200-112)/2+80)) --71
-            spriteShader:send("shadowSize", 70.0)
-            spriteShader:send("divideBy", -1*(playerZ-playerShadowZ)/64 + 1)
-            spriteShader:send("opacity", 1 - -1*(playerZ-playerShadowZ)/5/64)
-            spriteShader:send("canvasSize", {windowX, windowY})
-            love.graphics.setCanvas(shadowCanvas)
-            love.graphics.draw(
-                tempCanvas,
-                characterScreenX + 32/2 - 200/2,
-                characterScreenY - 128 + playerShadowZ --+ playerZ       --128 = base + (200-112)/2 
-            )
-            love.graphics.setShader()
-        -- end
+        love.graphics.setShader(spriteShader)
+        love.graphics.setBlendMode('alpha')
+        spriteShader:send("angle", angle)   
+        spriteShader:send("colorMapCanvas", colorMapCanvas)
+        spriteShader:send("spriteLeftX", characterScreenX + 32/2 - 200/2)    
+        spriteShader:send("spriteTopY", characterScreenY - 128 + playerShadowZ)
+        spriteShader:send("spriteHeight",200.0)
+        spriteShader:send("spriteWidth",200.0)
+        spriteShader:send("spriteBase", ((200-112)/2+80))
+        spriteShader:send("xstart", ((200-112)/2+30)) --43
+        spriteShader:send("xend", ((200-112)/2+80)) --71
+        spriteShader:send("shadowSize", 70.0)
+        spriteShader:send("divideBy", 1.5) ---1*(playerZ-playerShadowZ)/64 + 1)
+        spriteShader:send("opacity", 1 - -1*(playerZ-playerShadowZ)/5/64)
+        spriteShader:send("canvasSize", {windowX, windowY})
+        spriteShader:send("spotlight", {playerX + 8 - cameraX, playerY - cameraY + playerZ/2})
+        spriteShader:send("showSpotlight", 0)
+        love.graphics.setCanvas(shadowCanvas)
+        love.graphics.draw(
+            tempCanvas,
+            characterScreenX + 32/2 - 200/2,
+            characterScreenY - 128 + playerShadowZ --+ playerZ       --128 = base + (200-112)/2 
+        )
+        love.graphics.setShader()
+
         
         love.graphics.setCanvas(objectCanvas)
         love.graphics.draw(
@@ -683,15 +677,47 @@ function love.draw()
     --     1
     -- )
     -- love.graphics.setBlendMode("alpha")
+    local lutNew = 96
+    local lutOld = 0
+    local normalizedAngle = angle % 360 / 80
+    if (angle % 360 >= 0 and angle % 360 <=80) then
+        normalizedAngle = angle % 360 / 80.0;
+        lutNew = 96.0;
+        lutOld = 0;
+    end
+    if (angle % 360 >= 80 and angle % 360 <=100) then
+        normalizedAngle = angle % 360 / 90.0
+        lutNew = 0
+        lutOld = 0
+    end
+    if (angle % 360 > 100 and angle % 360 <=180 ) then
+        normalizedAngle = (angle % 360 - 100.0) / 80.0
+        lutNew = 0
+        lutOld = 32.0
+    end
+    if (angle % 360 > 180 and angle % 360 <=260) then
+        normalizedAngle = (angle % 360 - 180.0) / 80.0
+        lutNew = 32.0
+        lutOld = 63.0
+    end
+    if (angle % 360 > 260 and angle % 360 <=280) then
+        normalizedAngle = (angle % 360 - 180.0) / 90.0
+        lutNew = 63.0
+        lutOld = 63.0
+    end
+    if (angle % 360 > 280 and angle % 360 <=360) then
+        normalizedAngle = (angle % 360 - 280.0) / 80.0
+        lutNew = 63.0
+        lutOld = 96.0
+    end
 
     local noShadows = 0
-    if (angle % 360 > 180 and angle % 360 < 360) then
-        noShadows = 1
-    else 
-        noShadows = 0
-    end
+    -- if (angle % 360 > 180 and angle % 360 < 360) then
+    --     noShadows = 1
+    -- else 
+    --     noShadows = 0
+    -- end
     love.graphics.setCanvas(intermediateCanvas)
-    ultimateShader:send("offscreenCanvas", offscreenCanvas)
     ultimateShader:send("objectCanvas", objectCanvas)
     ultimateShader:send("shadowCanvas", shadowCanvas)
     ultimateShader:send("colorMapCanvas", colorMapCanvas)
@@ -699,17 +725,17 @@ function love.draw()
     ultimateShader:send("shadowAngle", angle)
     ultimateShader:send("shadowSize", 32)
     ultimateShader:send("shadowAlpha", 0.5 * (1 - math.abs((angle - 360) % 360 - 90)/90))
-    --ultimateShader:send("lutOld", 0.0)
-    --ultimateShader:send("lutNew", 96.0)
-    ultimateShader:send("spotlight", {playerX + 8 - cameraX, playerY - cameraY})
-    --ultimateShader:send("spotlightColor", {0.8, 0.8, 0, 1.0})
+    ultimateShader:send("lutOld", lutOld)
+    ultimateShader:send("lutNew", lutNew)
+    ultimateShader:send("spotlight", {playerX + 8 - cameraX + randomIt, playerY - cameraY + playerZ/2 + randomIt})
     ultimateShader:send("canvasSize", {windowX, windowY})
     ultimateShader:send("noShadows", noShadows)
+    ultimateShader:send("normalizedAngle", normalizedAngle)
     love.graphics.setShader(ultimateShader)
-    love.graphics.setColor(1,1,1,1)
-    love.graphics.rectangle("fill", 0, 0, windowX, windowY)  
-
+    --love.graphics.setBlendMode('alpha')
+    love.graphics.draw(offscreenCanvas, 0, 0, 0, 1, 1)
     love.graphics.setCanvas()
+    love.graphics.setShader()
 
     --Reduce viewport but scale up to window size
     local viewportX = 640
