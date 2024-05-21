@@ -100,6 +100,7 @@ function love.load()
     grassQuad = love.graphics.newQuad(1280,0,32,27, grassSheet:getDimensions())
     treeTrunk = love.graphics.newQuad(0, 0, 480, 480, treeSheet:getDimensions())
     treeFoliage = love.graphics.newQuad(480,0,480,480, treeSheet:getDimensions())
+    pineTree = love.graphics.newQuad(960,0,480,480, treeSheet:getDimensions())
 end
 
 function love.resize(w, h)
@@ -148,22 +149,22 @@ function love.update(dt)
     if playerState ~= "Jumping-Start" then playerState = "Standing" end
 
     if love.keyboard.isDown("right") then
-        playerax = .5
+        playerax = .2
         playerState = "Walking"
         playerDirection = "Right"
     end
     if love.keyboard.isDown("left") then
-        playerax = -.5
+        playerax = -.2
         playerState = "Walking"
         playerDirection = "Left"
     end
     if love.keyboard.isDown("up") then
-        playeray = -.5
+        playeray = -.2
         playerState = "Walking"
         playerDirection = "Up"
     end
     if love.keyboard.isDown("down") then
-        playeray = .5
+        playeray = .2
         playerState = "Walking"
         playerDirection = "Down"
     end
@@ -363,6 +364,7 @@ function love.draw()
                 )
             end
 
+            --Draws mountain faces
             if (z < 0) then
                 local gradientGleam = 3
 
@@ -464,7 +466,8 @@ function love.draw()
                 love.graphics.setShader()
             end
 
-            if tile > 500 then                                      --Draw tree
+            --Birch Tree
+            if tile == 512 then                                      --Draw tree
                 local time = love.timer.getTime()
                 local sway = math.sin(time + yC) * 0.04
 
@@ -476,7 +479,7 @@ function love.draw()
                 spriteShader:send("spriteLeftX", xTileWidthOffsetX + 32/2 - 480/2)    
                 spriteShader:send("spriteTopY", yTileHeightOffsetY - 224)
                 spriteShader:send("spriteHeight",480.0*scaleX)
-                spriteShader:send("spriteWidth",960.0*scaleY)
+                spriteShader:send("spriteWidth",1440.0*scaleY)
                 spriteShader:send("spriteBase", 250*scaleY)
                 spriteShader:send("xstart", 193*scaleX)
                 spriteShader:send("xend", 320*scaleX)
@@ -488,6 +491,13 @@ function love.draw()
                 local dx = (playerX + 8 - cameraX) - (xTileWidthOffsetX)
                 local dy = (playerY - cameraY + playerZ/2) - (yTileHeightOffsetY)
                 local distance = math.sqrt(dx * dx + dy * dy)
+
+                --Set the noSunShadows uniform based on the angle
+                if (angle % 360 > 180 and angle % 360 < 360) then
+                    spriteShader:send("noSunShadows",1.0)
+                else 
+                    spriteShader:send("noSunShadows",0.0)
+                end
 
                 -- Set the showSpotlight uniform based on the distance
                 if distance < 100 then                                  --200 represents the radius of the spotlight
@@ -540,9 +550,10 @@ function love.draw()
                     224,
                     224        
                 )       
-                combinedShader:send("hueAdjust", ((xC * yC) % 45 * -1) + 22)
-                combinedShader:send("time", time)
-                love.graphics.setShader(combinedShader)  
+                --combinedShader:send("hueAdjust", ((xC * yC) % 45 * -1) + 22)
+                --combinedShader:send("time", time)
+                --love.graphics.setShader(combinedShader)  
+                love.graphics.setShader()
                 love.graphics.draw(             --Draw the tree leaves 
                     treeSheet,
                     treeFoliage,
@@ -559,41 +570,77 @@ function love.draw()
 
             end
 
+            --Pine Trees
+            if tile == 520 then
+                local time = love.timer.getTime()
+                local sway = math.sin(time + yC) * 0.04
+                
+                love.graphics.setShader(spriteShader)
+                love.graphics.setBlendMode('lighten', 'premultiplied')
+                spriteShader:send("divideBy", 1.2)
+                spriteShader:send("angle", angle)   
+                spriteShader:send("colorMapCanvas", colorMapCanvas)
+                spriteShader:send("spriteLeftX", xTileWidthOffsetX + 32/2 - 480/2)    
+                spriteShader:send("spriteTopY", yTileHeightOffsetY - 224)
+                spriteShader:send("spriteHeight",480.0*scaleX)
+                spriteShader:send("spriteWidth",1440.0*scaleY)
+                spriteShader:send("spriteBase", 260*scaleY)
+                spriteShader:send("xstart", 150*scaleX)
+                spriteShader:send("xend", 350*scaleX)
+                spriteShader:send("shadowSize", 250) --140
+                spriteShader:send("opacity", 1.0)
+                spriteShader:send("canvasSize", {windowX, windowY})
+                spriteShader:send("spotlight", {playerX + 8 - cameraX, playerY - cameraY + playerZ/2})                
+                
+                local dx = (playerX + 8 - cameraX) - (xTileWidthOffsetX)
+                local dy = (playerY - cameraY + playerZ/2) - (yTileHeightOffsetY)
+                local distance = math.sqrt(dx * dx + dy * dy)
+
+                if distance < 1 then                                  --200 represents the radius of the spotlight
+                    spriteShader:send("showSpotlight", 1)
+                else
+                    spriteShader:send("showSpotlight", 0)
+                end
+
+                love.graphics.setCanvas(shadowCanvas)
+                love.graphics.draw(             --Draw the pineTree shadow
+                    treeSheet,
+                    pineTree,
+                    xTileWidthOffsetX * scaleX,
+                    yTileHeightOffsetY * scaleY,
+                    sway,
+                    scaleX,
+                    scaleY,
+                    224,
+                    224        
+                )
+                love.graphics.setBlendMode('alpha')
+      
+                --combinedShader:send("hueAdjust", ((xC * yC) % 45 * -1) + 22)
+                --combinedShader:send("time", time)
+                --love.graphics.setShader(combinedShader)
+                love.graphics.setShader() 
+                love.graphics.setCanvas(objectCanvas)
+                love.graphics.draw(             --Draw the trunk
+                    treeSheet,
+                    pineTree,
+                    xTileWidthOffsetX,-- - 224 * scaleX,
+                    yTileHeightOffsetY,-- - 224 * scaleY,
+                    sway,
+                    1,
+                    1,
+                    224,
+                    224        
+                )       
+
+                love.graphics.setCanvas(offscreenCanvas)       
+            end
+
+
             if yC - 1 < 1 or yC - 1 > #mapArray then goto continueX end
             if xC < 1 or xC > #mapArray[yC - 1] then goto continueX end
             local tile = mapArray[yC - 1][xC][1]
             local yTileHeightOffsetY = (y-2)*tileSize - offsetY;
-            -- if tile == 10 then
-            --     love.graphics.setCanvas(objectCanvas)
-            --     local time = love.timer.getTime()
-            --     local windEffect = math.sin(time + yC) * 0.1
-            --     local xAdjustment = windEffect * 27 -- 27 is the grassHeight
-            --     love.graphics.draw(
-            --         grassSheet,
-            --         grassQuad,
-            --         (xTileWidthOffsetX - xAdjustment-5),
-            --         (yTileHeightOffsetY - 5),
-            --         0,
-            --         1,
-            --         1,
-            --         0, 0,
-            --         windEffect, 0
-            --     )
-            --     windEffect = math.sin(time + yC + 3) * 0.1
-            --     xAdjustment = windEffect * 27 -- 27 is the grassHeight
-            --     love.graphics.draw(
-            --         grassSheet,
-            --         grassQuad,
-            --         (xTileWidthOffsetX - xAdjustment),
-            --         (yTileHeightOffsetY + 8),
-            --         0,
-            --         1,
-            --         1,
-            --         0, 0,
-            --         windEffect, 0
-            --     )
-            --     love.graphics.setCanvas(offscreenCanvas)
-            -- end
 
             ::continueX::
         end
@@ -640,7 +687,7 @@ function love.draw()
         spriteShader:send("xstart", ((200-112)/2+30)) --43
         spriteShader:send("xend", ((200-112)/2+80)) --71
         spriteShader:send("shadowSize", 70.0)
-        spriteShader:send("divideBy", 1.5) ---1*(playerZ-playerShadowZ)/64 + 1)
+        spriteShader:send("divideBy", -1*(playerZ-playerShadowZ)/64 + 1.5)
         spriteShader:send("opacity", 1 - -1*(playerZ-playerShadowZ)/5/64)
         spriteShader:send("canvasSize", {windowX, windowY})
         spriteShader:send("spotlight", {playerX + 8 - cameraX, playerY - cameraY + playerZ/2})
@@ -684,39 +731,28 @@ function love.draw()
         normalizedAngle = angle % 360 / 80.0;
         lutNew = 96.0;
         lutOld = 0;
-    end
-    if (angle % 360 >= 80 and angle % 360 <=100) then
+    elseif (angle % 360 >= 80 and angle % 360 <=100) then
         normalizedAngle = angle % 360 / 90.0
         lutNew = 0
         lutOld = 0
-    end
-    if (angle % 360 > 100 and angle % 360 <=180 ) then
+    elseif (angle % 360 > 100 and angle % 360 <=180 ) then
         normalizedAngle = (angle % 360 - 100.0) / 80.0
         lutNew = 0
         lutOld = 32.0
-    end
-    if (angle % 360 > 180 and angle % 360 <=260) then
+    elseif (angle % 360 > 180 and angle % 360 <=260) then
         normalizedAngle = (angle % 360 - 180.0) / 80.0
         lutNew = 32.0
         lutOld = 63.0
-    end
-    if (angle % 360 > 260 and angle % 360 <=280) then
+    elseif (angle % 360 > 260 and angle % 360 <=280) then
         normalizedAngle = (angle % 360 - 180.0) / 90.0
         lutNew = 63.0
         lutOld = 63.0
-    end
-    if (angle % 360 > 280 and angle % 360 <=360) then
+    elseif (angle % 360 > 280 and angle % 360 <=360) then
         normalizedAngle = (angle % 360 - 280.0) / 80.0
         lutNew = 63.0
         lutOld = 96.0
     end
 
-    local noShadows = 0
-    -- if (angle % 360 > 180 and angle % 360 < 360) then
-    --     noShadows = 1
-    -- else 
-    --     noShadows = 0
-    -- end
     love.graphics.setCanvas(intermediateCanvas)
     ultimateShader:send("objectCanvas", objectCanvas)
     ultimateShader:send("shadowCanvas", shadowCanvas)
@@ -729,7 +765,6 @@ function love.draw()
     ultimateShader:send("lutNew", lutNew)
     ultimateShader:send("spotlight", {playerX + 8 - cameraX + randomIt, playerY - cameraY + playerZ/2 + randomIt})
     ultimateShader:send("canvasSize", {windowX, windowY})
-    ultimateShader:send("noShadows", noShadows)
     ultimateShader:send("normalizedAngle", normalizedAngle)
     love.graphics.setShader(ultimateShader)
     --love.graphics.setBlendMode('alpha')
@@ -738,8 +773,8 @@ function love.draw()
     love.graphics.setShader()
 
     --Reduce viewport but scale up to window size
-    local viewportX = 640
-    local viewportY = 480
+    local viewportX = 800
+    local viewportY = 600
     local quadX = playerX - viewportX / 2
     local quadY = playerY - viewportY / 2
     quadX = math.max(0, math.min(quadX, windowX/2 - viewportX/2))

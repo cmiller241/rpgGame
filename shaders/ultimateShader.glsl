@@ -6,14 +6,14 @@ extern Image lutImage;              //LUT tables (noon, dusk, midnight, dawn, li
 extern float shadowAngle;           //Angle of shadow
 extern float shadowSize;            //Length of shadow  
 extern float shadowAlpha;           //Transparency of shadows         
-extern float noShadows;
 extern float lutOld;                //Old LUT y value
 extern float lutNew;                //New LUT y value
 extern vec2 spotlight;              //Spotlight {x,y}
 extern vec4 spotlightColor;         //Spotlight Color vec4
 extern vec2 canvasSize;             //Canvas sizes for all canvas.
 extern float normalizedAngle;       //Normalized Angle for LUT mixing
-float noSpotlight = 0;           //Set if no spotlight for pixel should be rendered
+float noSpotlight = 0;              //Set if no spotlight for pixel should be rendered
+float noShadows = 0;                //Set if you want no shadows at all
 const float PI = 3.14159265359;
 float rad = shadowAngle * PI / 180.0;
 float angle = mod(shadowAngle, 360.0);

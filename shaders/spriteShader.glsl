@@ -10,6 +10,7 @@ extern float xend;
 extern float shadowSize;
 extern float divideBy;
 extern float opacity;
+extern float noSunShadows;
 uniform vec2 canvasSize; 
 extern vec2 spotlight;   
 extern float showSpotlight; 
@@ -47,62 +48,64 @@ vec4 effect(vec4 color, Image texture, vec2 texture_coords, vec2 screen_coords) 
     vec2 pos = texture_coords;
     vec4 pixel = vec4(0.0);
     vec2 normalizedScreenCoords = screen_coords / canvasSize;
-    vec4 colorMapPixel = Texel(colorMapCanvas,normalizedScreenCoords);
-    if (colorMapPixel.r == 1.0) {
-        //float faceHeight = colorMapPixel.b;
-        float newY = normalizedScreenCoords.y + sin(rad) / canvasSize.y;
-        bool isGoingDown = true;
-        if (newY > normalizedScreenCoords.y) {                  //It's moving downwards. 
-            for (int i = 1; i<= shadowSize; i++) {
-                if (colorMapPixel.r == 1.0) {
-                    normalizedScreenCoords.y += 1.0 / canvasSize.y;
-                    pos.y += 1.0 / spriteHeight;
-                } else {
-                    if (isGoingDown == true) isGoingDown = false;
+    if (noSunShadows != 1.0) {
+        vec4 colorMapPixel = Texel(colorMapCanvas,normalizedScreenCoords);
+        if (colorMapPixel.r == 1.0) {
+            //float faceHeight = colorMapPixel.b;
+            float newY = normalizedScreenCoords.y + sin(rad) / canvasSize.y;
+            bool isGoingDown = true;
+            if (newY > normalizedScreenCoords.y) {                  //It's moving downwards. 
+                for (int i = 1; i<= shadowSize; i++) {
+                    if (colorMapPixel.r == 1.0) {
+                        normalizedScreenCoords.y += 1.0 / canvasSize.y;
+                        pos.y += 1.0 / spriteHeight;
+                    } else {
+                        if (isGoingDown == true) isGoingDown = false;
+                        normalizedScreenCoords += canvasAngleMove;
+                        pos += spriteAngleMove;
+                    }
+                    colorMapPixel = Texel(colorMapCanvas, normalizedScreenCoords);
+                    if (normalizedScreenCoords.y >= baseScreenY - 0.001 &&
+                        normalizedScreenCoords.y <= baseScreenY + 0.001 && 
+                        normalizedScreenCoords.x >= baseScreenX1 &&
+                        normalizedScreenCoords.x <= baseScreenX2) {
+                        pos.y -= i*divideBy/spriteHeight;
+                        vec4 new_pixel = Texel(texture, pos);
+                        if (new_pixel.a != 0.0) {
+                            return vec4(0.0, 0.0, 0.0, opacity);
+                        }
+                    }                
+                }
+            }
+        } else {
+            if (segmentsIntersect(
+            normalizedScreenCoords,
+            normalizedScreenCoords + shadowSize * canvasAngleMove,
+            vec2(baseScreenX1, baseScreenY),
+            vec2(baseScreenX2, baseScreenY)
+            )) { //If the shadow doesn't intersect the base, don't draw anything
+                float faceHeight = colorMapPixel.b;
+                for (int i = 0; i <= shadowSize; i++) {
                     normalizedScreenCoords += canvasAngleMove;
                     pos += spriteAngleMove;
+                    colorMapPixel = Texel(colorMapCanvas, normalizedScreenCoords); //shadow_coords);
+                    //if (colorMapPixel.b != faceHeight) return vec4(0.0); //If an occluder in way...
+                    if (normalizedScreenCoords.y >= baseScreenY - 0.003 &&
+                        normalizedScreenCoords.y <= baseScreenY + 0.003 && 
+                        normalizedScreenCoords.x >= baseScreenX1 &&
+                        normalizedScreenCoords.x <= baseScreenX2) {
+                        pos.y -= i*divideBy/spriteHeight;
+                        vec4 new_pixel = Texel(texture, pos);
+                        if (new_pixel.a != 0.0) {
+                            //return vec4(0.0, 0.0, 1.0, opacity); // red color
+                            pixel.b = 0.1;
+                            pixel.a = 1.0;
+                        } else {
+                            break; //return vec4(0.0);
+                            //return pixel;   //Does weird mirror stuff if you don't add this :-)
+                        }
+                    }   
                 }
-                colorMapPixel = Texel(colorMapCanvas, normalizedScreenCoords);
-                if (normalizedScreenCoords.y >= baseScreenY - 0.001 &&
-                    normalizedScreenCoords.y <= baseScreenY + 0.001 && 
-                    normalizedScreenCoords.x >= baseScreenX1 &&
-                    normalizedScreenCoords.x <= baseScreenX2) {
-                    pos.y -= i*divideBy/spriteHeight;
-                    vec4 new_pixel = Texel(texture, pos);
-                    if (new_pixel.a != 0.0) {
-                        return vec4(0.0, 0.0, 0.0, opacity);
-                    }
-                }                
-            }
-        }
-    } else {
-        if (segmentsIntersect(
-        normalizedScreenCoords,
-        normalizedScreenCoords + shadowSize * canvasAngleMove,
-        vec2(baseScreenX1, baseScreenY),
-        vec2(baseScreenX2, baseScreenY)
-        )) { //If the shadow doesn't intersect the base, don't draw anything
-            float faceHeight = colorMapPixel.b;
-            for (int i = 0; i <= shadowSize; i++) {
-                normalizedScreenCoords += canvasAngleMove;
-                pos += spriteAngleMove;
-                colorMapPixel = Texel(colorMapCanvas, normalizedScreenCoords); //shadow_coords);
-                //if (colorMapPixel.b != faceHeight) return vec4(0.0); //If an occluder in way...
-                if (normalizedScreenCoords.y >= baseScreenY - 0.003 &&
-                    normalizedScreenCoords.y <= baseScreenY + 0.003 && 
-                    normalizedScreenCoords.x >= baseScreenX1 &&
-                    normalizedScreenCoords.x <= baseScreenX2) {
-                    pos.y -= i*divideBy/spriteHeight;
-                    vec4 new_pixel = Texel(texture, pos);
-                    if (new_pixel.a != 0.0) {
-                        //return vec4(0.0, 0.0, 1.0, opacity); // red color
-                        pixel.b = 0.1;
-                        pixel.a = 1.0;
-                    } else {
-                        break; //return vec4(0.0);
-                        //return pixel;   //Does weird mirror stuff if you don't add this :-)
-                    }
-                }   
             }
         }
     }
