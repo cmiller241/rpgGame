@@ -1,19 +1,19 @@
-//extern Image offscreenCanvas;       //Canvas for grass, dirt, etc.
-extern Image objectCanvas;          //Canvas of Players, NPCs, Objects
-extern Image shadowCanvas;          //Canvas of Shadows for Objects (not tile content)
-extern Image colorMapCanvas;        //Canvas of Color Map
-extern Image lutImage;              //LUT tables (noon, dusk, midnight, dawn, lighting)
-extern float shadowAngle;           //Angle of shadow
-extern float shadowSize;            //Length of shadow  
-extern float shadowAlpha;           //Transparency of shadows         
-extern float lutOld;                //Old LUT y value
-extern float lutNew;                //New LUT y value
-extern vec2 spotlight;              //Spotlight {x,y}
-extern vec4 spotlightColor;         //Spotlight Color vec4
-extern vec2 canvasSize;             //Canvas sizes for all canvas.
-extern float normalizedAngle;       //Normalized Angle for LUT mixing
-float noSpotlight = 0;              //Set if no spotlight for pixel should be rendered
-float noShadows = 0;                //Set if you want no shadows at all
+//extern Image offscreenCanvas;         //Canvas for grass, dirt, etc.
+extern Image objectCanvas;              //Canvas of Players, NPCs, Objects
+extern Image shadowCanvas;              //Canvas of Shadows for Objects (not tile content)
+extern Image colorMapCanvas;            //Canvas of Color Map
+extern Image lutImage;                  //LUT tables (noon, dusk, midnight, dawn, lighting)
+extern float shadowAngle;               //Angle of shadow
+extern float shadowSize;                //Length of shadow  
+extern float shadowAlpha;               //Transparency of shadows         
+extern float lutOld;                    //Old LUT y value
+extern float lutNew;                    //New LUT y value
+extern vec2 spotlight;                  //Spotlight {x,y}
+extern vec4 spotlightColor;             //Spotlight Color vec4
+extern vec2 canvasSize;                 //Canvas sizes for all canvas.
+extern float normalizedAngle;           //Normalized Angle for LUT mixing
+float noSpotlight = 0;                  //Set if no spotlight for pixel should be rendered
+float noShadows = 0;                    //Set if you want no shadows at all
 const float PI = 3.14159265359;
 float rad = shadowAngle * PI / 180.0;
 float angle = mod(shadowAngle, 360.0);
@@ -28,8 +28,13 @@ vec4 effect(vec4 color, Image texture, vec2 textureCoords, vec2 screenCoords) {
     
     vec4 objectPixel = Texel(objectCanvas,textureCoords);
     if (objectPixel.a != 1.0) {                                                             //If objectCanvas is not semi-transparent or empty...
-        vec4 offscreenPixel = Texel(texture, textureCoords);                                 //Let's check ground tiles..
+        vec4 offscreenPixel = Texel(texture, textureCoords);                                //Let's check ground tiles..
         currentPixel = mix(offscreenPixel, objectPixel, objectPixel.a);                     //Object and Offscreen Pixel Combination is sufficient
+        vec4 colorMapPixelOriginal = Texel(colorMapCanvas, textureCoords);                  //Let's get the colorMap data
+        if (colorMapPixelOriginal.b > 0.0) {
+            float brightnessFactor = colorMapPixelOriginal.b; // Elevation-based brightness factor
+            currentPixel.rgb *= mix(1.0, 1.5, brightnessFactor); // Scale the RGB values up to brighten without washing out
+        }                                                                  
         if (noShadows == 0.0) {                                                             //If we're checking for shadows...
             vec4 shadowPixel = Texel(shadowCanvas, textureCoords);                          //Check whether pixel coordinate has shadow...}            
             if (shadowPixel.r > 0.0) {
@@ -73,7 +78,7 @@ vec4 effect(vec4 color, Image texture, vec2 textureCoords, vec2 screenCoords) {
             } else {
                 for (int i = 0; i <= shadowSize*3; i++) {
                     pos += direction * stepSize;
-                    shadow_pixel = Texel(colorMapCanvas, pos); //shadow_coords);
+                    shadow_pixel = Texel(colorMapCanvas, pos); //shadow_coords
                     float distToOccluder = distance(pos, textureCoords);
                     if (shadow_pixel.r == 1.0 && shadow_pixel.g == 1.0 
                     && shadow_pixel.b > colorMapPixelOriginal.b 
@@ -90,7 +95,7 @@ vec4 effect(vec4 color, Image texture, vec2 textureCoords, vec2 screenCoords) {
     }
 
     //LUT Time
-    vec3 normalizedColor = currentPixel.rgb * 31.0;                                              //Normalize the colors 0 - 31 (32 values)
+    vec3 normalizedColor = currentPixel.rgb * 31.0;                                         //Normalize the colors 0 - 31 (32 values)
 
     // Calculate the LUT image coordinates
     vec2 lutCoords1;                        

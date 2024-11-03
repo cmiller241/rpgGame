@@ -50,7 +50,7 @@ vec4 effect(vec4 color, Image texture, vec2 texture_coords, vec2 screen_coords) 
     vec2 normalizedScreenCoords = screen_coords / canvasSize;
     if (noSunShadows != 1.0) {
         vec4 colorMapPixel = Texel(colorMapCanvas,normalizedScreenCoords);
-        if (colorMapPixel.r == 1.0) {
+        if (colorMapPixel.r == 1.0) {                               //If we're on a face tile
             //float faceHeight = colorMapPixel.b;
             float newY = normalizedScreenCoords.y + sin(rad) / canvasSize.y;
             bool isGoingDown = true;
