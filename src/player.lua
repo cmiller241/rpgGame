@@ -22,7 +22,7 @@ player.shadowZ = 0  -- Position of the player's shadow on the ground
 player.friction = 0.99  -- Friction to slow down the player's movement
 player.speed = 10  -- Movement speed
 player.zSpeed = 0.5  -- Speed along the z-axis (used for jumping)
-player.speedLimit = 2  -- Maximum speed limit for the player
+player.speedLimit = 4  -- Maximum speed limit for the player
 player.ax = 0  -- Acceleration in the x-direction
 player.ay = 0  -- Acceleration in the y-direction
 player.az = 0  -- Acceleration in the z-direction
@@ -41,12 +41,12 @@ player.state = "Standing"  -- Current action state (e.g., "Standing", "Walking",
 
 -- Jumping-related properties
 player.jump = false  -- Whether the player is currently jumping
-player.jumpForce = -8  -- Force applied when jumping
+player.jumpForce = -13  -- Force applied when jumping
 player.isOnGround = true  -- Boolean for checking if the player is grounded
 
 -- Gravity and other movement properties
-player.gravity = 30  -- Force pulling the player down (for jumping mechanics)
-player.gravityFactor = 500  -- Factor to adjust gravity for different scenarios
+player.gravity = 0.1  -- Force pulling the player down (for jumping mechanics)
+player.gravityFactor = 250  -- Factor to adjust gravity for different scenarios
 player.speedCharacter = 10  -- Additional or alternative speed for the character
 
 function player:update(dt)
@@ -114,10 +114,13 @@ function player:update(dt)
         self.vz = self.jumpForce
         self.isOnGround = false
         self.jump = false
+        print("self.vz is " .. self.vz)
+
     end
 
     -- Apply gravity while in air
     self.vz = self.vz + self.gravity * self.gravityFactor * dt
+
 
     -- Prevent player from falling below the ground level
     if self.z > 0 then
@@ -211,8 +214,14 @@ end
 
 function player:keyreleased(key)
     if key == "space" then
+        print("Space key released")
+        print("The self.jump is " .. tostring(self.jump))
+        print("The self.isOnGround is " .. tostring(self.isOnGround))
+
         if (self.jump == false and self.isOnGround == true) then
             self.jump = true
+            print("The self.jump NOW is " .. tostring(self.jump))
+
         end
     end
 end
@@ -248,8 +257,8 @@ function player:draw(cameraX, cameraY)
         love.graphics.setBlendMode('alpha')
         shader.sprite:send("angle", shadow.angle)   
         shader.sprite:send("colorMapCanvas", canvas.colorMap)
-        shader.sprite:send("spriteLeftX", characterScreenX + 32/2 - 200/2)    
-        shader.sprite:send("spriteTopY", characterScreenY - 128 + player.shadowZ)
+        --shader.sprite:send("spriteLeftX", characterScreenX + 32/2 - 200/2)    
+        --shader.sprite:send("spriteTopY", characterScreenY - 128 + player.shadowZ)
         shader.sprite:send("spriteHeight",200.0)
         shader.sprite:send("spriteWidth",200.0)
         shader.sprite:send("spriteBase", ((200-112)/2+80))

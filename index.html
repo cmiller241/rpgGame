@@ -1,23 +1,22 @@
 <!DOCTYPE html>
-<html lang="en">
-    <head>
-        <title>RPG Demo - 20231021</title>
-        <meta name="description" content="RPG Demo" />
-        <link rel="stylesheet" href="css/style.css" />
-    </head>
-    <body>
-    </body>
-    <script src="js/Character.js"></script>
-    <script src="js/SpriteMap.js" defer></script>
-    <script src="js/KeyBoardState.js"></script>
-    <script src="js/LoadHandler.js"></script>
-    <script src="js/MapObject.js"></script>
-    <script src="js/Map.js"></script>
-    <script src="js/Main.js" defer></script>
-    <script>
-        window.onload = () => {
-            const game = new Game();
-            game.start();
-        }
-    </script>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Phaser Game Demo</title>
+  <script src="https://cdn.jsdelivr.net/npm/phaser@3.80.1/dist/phaser.min.js"></script>
+  <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+</head>
+<body style="background-color:#000; overflow: hidden">
+  <div id="game-container"></div>
+  <script type="module">
+    import { getGameConfig } from './js/gameConfig.js';
+    import { preload } from './js/preload.js';
+    import { create } from './js/map.js';
+    import { update } from './js/update.js';
+    import { render } from './js/render.js';
+
+    const config = getGameConfig({ preload, create, update, render });
+    const game = new Phaser.Game(config);
+  </script>
+</body>
 </html>
