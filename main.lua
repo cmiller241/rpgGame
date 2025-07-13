@@ -74,89 +74,7 @@ function love.update(dt)
     end
 end
 
-function love.draw()
-    canvas.clear()
-    sprites.tileBatch:clear()
-    sprites.treeBatch:clear()
-    sprites.treeShadowBatch:clear()
-    love.graphics.setCanvas(canvas.shadow)
-    love.graphics.clear(0,0,0,0)
-
-    local tilesHorizontal = math.ceil(window.width / sprites.size)
-    local tilesVertical = math.ceil(window.height / sprites.size)
-    local cameraX = player.x - window.width / 2
-    local cameraY = player.y - window.height / 2
-    local firstTileX = math.floor(cameraX / sprites.size)
-    local firstTileY = math.floor(cameraY / sprites.size)
-    local offsetX = cameraX % sprites.size
-    local offsetY = cameraY % sprites.size
-
-    for y = 0, tilesVertical + 5 do
-        local yC = firstTileY + y
-        if yC < 1 or yC > #mapArray then goto continueY end
-        for x = -5, tilesHorizontal + 5 do
-            local xC = firstTileX + x
-            if xC < 1 or xC > #mapArray[yC] then goto continueX end
-            local xTileOffset = (x - 1) * sprites.size - offsetX
-            local yTileOffset = (y - 1) * sprites.size - offsetY
-            local tile, z = mapArray[yC][xC][1], mapArray[yC][xC][2]
-            local zHeight = z / sprites.size
-
-            if tile == 1 then
-                grass:add(xC, yC, z, zHeight, xTileOffset, yTileOffset)
-                grass:addFlourish(xC, yC, z, zHeight, xTileOffset, yTileOffset)
-                if z ~= 0 then
-                    if sprites.treeBatch:getCount() > 0 then
-                        love.graphics.setCanvas(canvas.object)
-                        love.graphics.draw(sprites.treeBatch)
-                        sprites.treeBatch:clear()
-                    end
-                    if shadow.frame == shadow.frequency and sprites.treeShadowBatch:getCount() > 0 then
-                        love.graphics.setCanvas(canvas.shadow)
-                        love.graphics.setShader(shader.sprite)
-                        love.graphics.setBlendMode('lighten', 'premultiplied')
-                        shader.sprite:send("divideBy", 2)
-                        shader.sprite:send("angle", shadow.angle)
-                        shader.sprite:send("colorMapCanvas", canvas.colorMap)
-                        shader.sprite:send("spriteHeight", 480.0)
-                        shader.sprite:send("spriteWidth", 1440.0)
-                        shader.sprite:send("spriteBase", 250)
-                        shader.sprite:send("xstart", 100)
-                        shader.sprite:send("xend", 320)
-                        shader.sprite:send("shadowSize", 250)
-                        shader.sprite:send("opacity", 1.0)
-                        shader.sprite:send("canvasSize", {800, 600})
-                        shader.sprite:send("spotlight", {player.x + 8 - cameraX, player.y - cameraY + player.z / 2})
-                        if (shadow.angle % 360 > 180 and shadow.angle % 360 < 360) then
-                            shader.sprite:send("noSunShadows", 1.0)
-                        else
-                            shader.sprite:send("noSunShadows", 0.0)
-                        end
-                        shader.sprite:send("showSpotlight", 1)
-                        love.graphics.draw(sprites.treeShadowBatch)
-                        love.graphics.setBlendMode('alpha')
-                        love.graphics.setShader()
-                        sprites.treeShadowBatch:clear()
-                    end
-                    mountain:add(xC, yC, z, zHeight, xTileOffset, yTileOffset)
-                end
-            elseif tile == 10 then
-                grass:add(xC, yC, z, zHeight, xTileOffset, yTileOffset)
-                tallGrass:add(xC, yC, z, zHeight, xTileOffset, yTileOffset, cameraX, cameraY)
-            elseif tile == 512 then
-                grass:add(xC, yC, z, zHeight, xTileOffset, yTileOffset)
-                tree:add(xC, yC, z, zHeight, xTileOffset, yTileOffset, cameraX, cameraY)
-            end
-            ::continueX::
-        end
-
-        local characterRow = math.floor(player.y / sprites.size) + 1
-        if characterRow == yC then
-            player:draw(cameraX, cameraY, alpha)
-        end
-        ::continueY::
-    end
-
+function drawTreeBatches(cameraX, cameraY)
     if sprites.treeBatch:getCount() > 0 then
         love.graphics.setCanvas(canvas.object)
         love.graphics.draw(sprites.treeBatch)
@@ -189,6 +107,63 @@ function love.draw()
         love.graphics.setShader()
         sprites.treeShadowBatch:clear()
     end
+end
+
+function love.draw()
+    canvas.clear()
+    sprites.tileBatch:clear()
+    sprites.treeBatch:clear()
+    sprites.treeShadowBatch:clear()
+    love.graphics.setCanvas(canvas.shadow)
+    love.graphics.clear(0,0,0,0)
+
+    local tilesHorizontal = math.ceil(window.width / sprites.size)
+    local tilesVertical = math.ceil(window.height / sprites.size)
+    local cameraX = player.x - window.width / 2
+    local cameraY = player.y - window.height / 2
+    local firstTileX = math.floor(cameraX / sprites.size)
+    local firstTileY = math.floor(cameraY / sprites.size)
+    local offsetX = cameraX % sprites.size
+    local offsetY = cameraY % sprites.size
+
+    for y = 0, tilesVertical + 5 do
+        local yC = firstTileY + y
+        if yC < 1 or yC > #mapArray then goto continueY end
+        for x = -5, tilesHorizontal + 5 do
+            local xC = firstTileX + x
+            if xC < 1 or xC > #mapArray[yC] then goto continueX end
+            local xTileOffset = (x - 1) * sprites.size - offsetX
+            local yTileOffset = (y - 1) * sprites.size - offsetY
+            local tile, z = mapArray[yC][xC][1], mapArray[yC][xC][2]
+            local zHeight = z / sprites.size
+
+            if tile == 1 then
+                grass:add(xC, yC, z, zHeight, xTileOffset, yTileOffset)
+                grass:addFlourish(xC, yC, z, zHeight, xTileOffset, yTileOffset)
+                if z ~= 0 then
+                    drawTreeBatches(cameraX, cameraY)
+                    mountain:add(xC, yC, z, zHeight, xTileOffset, yTileOffset)
+                end
+            elseif tile == 10 then
+                grass:add(xC, yC, z, zHeight, xTileOffset, yTileOffset)
+                tallGrass:add(xC, yC, z, zHeight, xTileOffset, yTileOffset, cameraX, cameraY)
+            elseif tile == 512 then
+                grass:add(xC, yC, z, zHeight, xTileOffset, yTileOffset)
+                tree:add(xC, yC, z, zHeight, xTileOffset, yTileOffset, cameraX, cameraY)
+            end
+            ::continueX::
+        end
+
+        local characterRow = math.floor(player.y / sprites.size) + 1
+        if characterRow == yC then
+            drawTreeBatches(cameraX, cameraY)
+            love.graphics.setCanvas(canvas.object)
+            player:draw(cameraX, cameraY, alpha)
+        end
+        ::continueY::
+    end
+
+    drawTreeBatches(cameraX, cameraY)
 
     local lutNew = 96
     local lutOld = 0
@@ -232,7 +207,8 @@ function love.draw()
     shader.ultimate:send("lutImage", sprites.lut)
     shader.ultimate:send("shadowAngle", shadow.angle)
     shader.ultimate:send("shadowSize", shadow.size)
-    shader.ultimate:send("shadowAlpha", 0.5 * (1 - math.abs((shadow.angle - 360) % 360 - 90) / 90)^2)    shader.ultimate:send("lutOld", lutOld)
+    shader.ultimate:send("shadowAlpha", 0.5 * (1 - math.abs((shadow.angle - 360) % 360 - 90) / 90)^2)    
+    shader.ultimate:send("lutOld", lutOld)
     shader.ultimate:send("lutNew", lutNew)
     shader.ultimate:send("spotlight", {player.x + 8 - cameraX, player.y - cameraY + player.z / 2})
     shader.ultimate:send("canvasSize", {window.width, window.height})
