@@ -4,7 +4,7 @@ player = {}
 -- Load the player sprite sheet
 player.spriteSheet = love.graphics.newImage("img/sprites-fixedgrid.png")
 
---Load the player quads
+-- Load the player quads
 player.quads = {}
 for i = 1, math.ceil(player.spriteSheet:getHeight() / 112) do
     for j = 1, math.ceil(player.spriteSheet:getWidth() / 112) do
@@ -115,12 +115,10 @@ function player:update(dt)
         self.isOnGround = false
         self.jump = false
         print("self.vz is " .. self.vz)
-
     end
 
     -- Apply gravity while in air
     self.vz = self.vz + self.gravity * self.gravityFactor * dt
-
 
     -- Prevent player from falling below the ground level
     if self.z > 0 then
@@ -221,7 +219,6 @@ function player:keyreleased(key)
         if (self.jump == false and self.isOnGround == true) then
             self.jump = true
             print("The self.jump NOW is " .. tostring(self.jump))
-
         end
     end
 end
@@ -257,8 +254,6 @@ function player:draw(cameraX, cameraY)
         love.graphics.setBlendMode('alpha')
         shader.sprite:send("angle", shadow.angle)   
         shader.sprite:send("colorMapCanvas", canvas.colorMap)
-        --shader.sprite:send("spriteLeftX", characterScreenX + 32/2 - 200/2)    
-        --shader.sprite:send("spriteTopY", characterScreenY - 128 + player.shadowZ)
         shader.sprite:send("spriteHeight",200.0)
         shader.sprite:send("spriteWidth",200.0)
         shader.sprite:send("spriteBase", ((200-112)/2+80))
@@ -274,7 +269,7 @@ function player:draw(cameraX, cameraY)
         love.graphics.draw(
             canvas.temp,
             characterScreenX + 32/2 - 200/2,
-            characterScreenY - 128 + player.shadowZ --+ playerZ       --128 = base + (200-112)/2 
+            characterScreenY - 128 + player.shadowZ
         )
         love.graphics.setShader()
     end
@@ -282,8 +277,32 @@ function player:draw(cameraX, cameraY)
     love.graphics.setCanvas(canvas.object)
     love.graphics.draw(
         canvas.temp,
-        characterScreenX + 32/2  - 200/2,
-        characterScreenY - 128 + player.z       --128 = base + (200-112)/2 
+        characterScreenX + 32/2 - 200/2,
+        characterScreenY - 128 + player.z
     )
+end
 
+function player:drawOutline(cameraX, cameraY, mapArray)
+    love.graphics.setCanvas(canvas.offscreen)
+    love.graphics.setColor(1, 1, 0, 1) -- Yellow outline for visibility
+    local playerTileX = math.floor((self.x + 16) / sprites.size) + 1
+    local playerTileY = math.floor(self.y / sprites.size) + 1
+    local targetTileX, targetTileY = playerTileX, playerTileY
+    if self.direction == "Left" then
+        targetTileX = playerTileX - 1
+    elseif self.direction == "Right" then
+        targetTileX = playerTileX + 1
+    elseif self.direction == "Up" then
+        targetTileY = playerTileY - 1
+    elseif self.direction == "Down" then
+        targetTileY = playerTileY + 1
+    end
+    -- Ensure the target tile is within map bounds
+    if targetTileY >= 1 and targetTileY <= #mapArray and targetTileX >= 1 and targetTileX <= #mapArray[targetTileY] then
+        local targetX = (targetTileX - 1) * sprites.size - cameraX
+        local targetY = (targetTileY - 1) * sprites.size - cameraY
+        local z = mapArray[targetTileY][targetTileX][2]
+        love.graphics.rectangle("line", targetX, targetY + z, sprites.size, sprites.size)
+    end
+    love.graphics.setColor(1, 1, 1, 1) -- Reset color
 end

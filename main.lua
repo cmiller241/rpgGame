@@ -138,12 +138,12 @@ function love.draw()
             local zHeight = z / sprites.size
 
             if tile == 1 then
-                grass:add(xC, yC, z, zHeight, xTileOffset, yTileOffset)
-                grass:addFlourish(xC, yC, z, zHeight, xTileOffset, yTileOffset)
                 if z ~= 0 then
                     drawTreeBatches(cameraX, cameraY)
                     mountain:add(xC, yC, z, zHeight, xTileOffset, yTileOffset)
                 end
+                grass:add(xC, yC, z, zHeight, xTileOffset, yTileOffset)
+                grass:addFlourish(xC, yC, z, zHeight, xTileOffset, yTileOffset)
             elseif tile == 10 then
                 grass:add(xC, yC, z, zHeight, xTileOffset, yTileOffset)
                 tallGrass:add(xC, yC, z, zHeight, xTileOffset, yTileOffset, cameraX, cameraY)
@@ -196,6 +196,10 @@ function love.draw()
 
     love.graphics.setCanvas(canvas.offscreen)
     love.graphics.draw(sprites.tileBatch)
+    
+    -- Draw outline around adjacent tile based on player direction
+    player:drawOutline(cameraX, cameraY, mapArray)
+
     if canvas.showColorMap then
         love.graphics.draw(canvas.colorMap)
     end

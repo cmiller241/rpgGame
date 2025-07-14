@@ -19,7 +19,7 @@ function grass:add(xC, yC, z, zHeight, xTileWidthOffsetX, yTileHeightOffsetY)
         love.graphics.setCanvas(canvas.colorMap)
         love.graphics.rectangle("fill", xTileWidthOffsetX, yTileHeightOffsetY + z, sprites.size, sprites.size)
         love.graphics.setColor(1, 1, 1, 1)
-        --love.graphics.setCanvas(canvas.offscreen)
+        love.graphics.setCanvas(canvas.offscreen)
     end
 
     sprites.tileBatch:add(sprites.spritesQuads[tempTile], xTileWidthOffsetX, yTileHeightOffsetY + z)
@@ -38,7 +38,7 @@ function grass:add(xC, yC, z, zHeight, xTileWidthOffsetX, yTileHeightOffsetY)
         
         love.graphics.setBlendMode('alpha')
         love.graphics.setColor(1, 1, 1, 1)
-        --love.graphics.setCanvas(canvas.offscreen)
+        love.graphics.setCanvas(canvas.offscreen)
     end
 end
 
