@@ -147,6 +147,9 @@ function love.draw()
             elseif tile == 10 then
                 grass:add(xC, yC, z, zHeight, xTileOffset, yTileOffset)
                 tallGrass:add(xC, yC, z, zHeight, xTileOffset, yTileOffset, cameraX, cameraY)
+            elseif tile == 56 then
+                grass:add(xC, yC, z, zHeight, xTileOffset, yTileOffset)
+                dirt:add(xC, yC, z, zHeight, xTileOffset, yTileOffset)
             elseif tile == 512 then
                 grass:add(xC, yC, z, zHeight, xTileOffset, yTileOffset)
                 tree:add(xC, yC, z, zHeight, xTileOffset, yTileOffset, cameraX, cameraY)

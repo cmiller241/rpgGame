@@ -33,11 +33,13 @@ player.vz = 0  -- Velocity in the z-direction (vertical)
 -- Animation-related properties
 player.frame = 1  -- Current animation frame
 player.frameTime = 0  -- Timer for animation frame changes
-player.frameDuration = 0.2  -- Duration of each frame in the animation
+player.frameDuration = 0.2  -- Default duration of each frame (overridden for Plowing)
+player.plowingTime = 0  -- Timer for plowing animation duration
+player.plowedThisAnimation = false  -- Flag to prevent multiple tile updates
 
 -- Direction and state
 player.direction = "Down"  -- Direction the player is facing ("Up", "Down", "Left", "Right")
-player.state = "Standing"  -- Current action state (e.g., "Standing", "Walking", "Jumping")
+player.state = "Standing"  -- Current action state (e.g., "Standing", "Walking", "Jumping", "Plowing")
 
 -- Jumping-related properties
 player.jump = false  -- Whether the player is currently jumping
@@ -54,15 +56,64 @@ function player:update(dt)
     local previousState = self.state
     local previousDirection = self.direction
 
+    -- Set frame duration based on state
+    local frameDuration = self.state == "Plowing" and 0.125 or 0.2
+
     -- Update the animation frame timing
     self.frameTime = self.frameTime + dt
-    if self.frameTime >= self.frameDuration then
+    if self.frameTime >= frameDuration then
         self.frame = self.frame + 1
         self.frameTime = 0
 
         -- Get the number of frames in the current state and direction's animation
         local numFrames = #spriteMap["Cody"][self.state][self.direction]
-        if self.frame > numFrames then self.frame = 1 end
+        if self.frame > numFrames then
+            if self.state == "Plowing" then
+                self.state = "Standing" -- Return to Standing after Plowing completes
+                self.frame = 1
+                self.plowedThisAnimation = false -- Reset for next plowing
+            else
+                self.frame = 1 -- Loop non-Plowing animations
+            end
+        end
+
+        -- Update map tile to 56 when transitioning to frame 4 in Plowing
+        if self.state == "Plowing" and self.frame == 4 and not self.plowedThisAnimation then
+            local playerTileX = math.floor((self.x + 16) / sprites.size) + 1
+            local playerTileY = math.floor(self.y / sprites.size) + 1
+            local targetTileX, targetTileY = playerTileX, playerTileY
+            if self.direction == "Left" then
+                targetTileX = playerTileX - 1
+            elseif self.direction == "Right" then
+                targetTileX = playerTileX + 1
+            elseif self.direction == "Up" then
+                targetTileY = playerTileY - 1
+            elseif self.direction == "Down" then
+                targetTileY = playerTileY + 1
+            end
+            -- Ensure the target tile is within map bounds
+            if targetTileY >= 1 and targetTileY <= #mapArray and targetTileX >= 1 and targetTileX <= #mapArray[targetTileY] then
+                mapArray[targetTileY][targetTileX][1] = 56 -- Set tile type to 56
+                self.plowedThisAnimation = true -- Prevent multiple updates
+            end
+        end
+    end
+
+    -- Update plowing timer
+    if self.state == "Plowing" then
+        self.plowingTime = self.plowingTime + dt
+        if self.plowingTime >= 0.5 then
+            self.state = "Standing"
+            self.frame = 1
+            self.frameTime = 0
+            self.plowingTime = 0
+            self.plowedThisAnimation = false -- Reset for next plowing
+        end
+    end
+
+    -- Skip movement updates during Plowing
+    if self.state == "Plowing" then
+        return
     end
 
     -- Default state is "Standing" unless input changes it
@@ -207,6 +258,12 @@ function player:keypressed(key)
         self.state = "Jumping-Start"
         self.direction = "Down"
         self.frame = 1
+    elseif key == "p" then
+        self.state = "Plowing"
+        self.frame = 1
+        self.frameTime = 0
+        self.plowingTime = 0
+        self.plowedThisAnimation = false
     end
 end
 
