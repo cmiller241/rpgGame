@@ -9,6 +9,10 @@ function requireAll()
     require("src/tree")     -- Tree object and related functions (e.g., drawing tree tiles, handling elevation)
     require("src/grass")    -- Grass object and related functions (e.g., drawing grass tiles, handling elevation)
     require("src/tallgrass") -- Tall grass object and related functions
+    require("src/dirt")     -- Dirt object and related functions (e.g., drawing plowed dirt tiles)
+    require("src/ui")       -- UI elements (e.g., inventory)
+    require("src/sounds")       -- Loading sounds
+
     -- Initialize the canvas after requiring window and canvas
     canvas:initialize(window.width, window.height)
 end

@@ -4,7 +4,7 @@ player = {}
 -- Load the player sprite sheet
 player.spriteSheet = love.graphics.newImage("img/sprites-fixedgrid.png")
 
---Load the player quads
+-- Load the player quads
 player.quads = {}
 for i = 1, math.ceil(player.spriteSheet:getHeight() / 112) do
     for j = 1, math.ceil(player.spriteSheet:getWidth() / 112) do
@@ -22,7 +22,7 @@ player.shadowZ = 0  -- Position of the player's shadow on the ground
 player.friction = 0.99  -- Friction to slow down the player's movement
 player.speed = 10  -- Movement speed
 player.zSpeed = 0.5  -- Speed along the z-axis (used for jumping)
-player.speedLimit = 2  -- Maximum speed limit for the player
+player.speedLimit = 4  -- Maximum speed limit for the player
 player.ax = 0  -- Acceleration in the x-direction
 player.ay = 0  -- Acceleration in the y-direction
 player.az = 0  -- Acceleration in the z-direction
@@ -33,20 +33,22 @@ player.vz = 0  -- Velocity in the z-direction (vertical)
 -- Animation-related properties
 player.frame = 1  -- Current animation frame
 player.frameTime = 0  -- Timer for animation frame changes
-player.frameDuration = 0.2  -- Duration of each frame in the animation
+player.frameDuration = 0.2  -- Default duration of each frame (overridden for Plowing)
+player.plowingTime = 0  -- Timer for plowing animation duration
+player.plowedThisAnimation = false  -- Flag to prevent multiple tile updates
 
 -- Direction and state
 player.direction = "Down"  -- Direction the player is facing ("Up", "Down", "Left", "Right")
-player.state = "Standing"  -- Current action state (e.g., "Standing", "Walking", "Jumping")
+player.state = "Standing"  -- Current action state (e.g., "Standing", "Walking", "Jumping", "Plowing")
 
 -- Jumping-related properties
 player.jump = false  -- Whether the player is currently jumping
-player.jumpForce = -8  -- Force applied when jumping
+player.jumpForce = -13  -- Force applied when jumping
 player.isOnGround = true  -- Boolean for checking if the player is grounded
 
 -- Gravity and other movement properties
-player.gravity = 30  -- Force pulling the player down (for jumping mechanics)
-player.gravityFactor = 500  -- Factor to adjust gravity for different scenarios
+player.gravity = 0.1  -- Force pulling the player down (for jumping mechanics)
+player.gravityFactor = 250  -- Factor to adjust gravity for different scenarios
 player.speedCharacter = 10  -- Additional or alternative speed for the character
 
 function player:update(dt)
@@ -54,15 +56,64 @@ function player:update(dt)
     local previousState = self.state
     local previousDirection = self.direction
 
+    -- Set frame duration based on state
+    local frameDuration = self.state == "Plowing" and 0.125 or 0.2
+
     -- Update the animation frame timing
     self.frameTime = self.frameTime + dt
-    if self.frameTime >= self.frameDuration then
+    if self.frameTime >= frameDuration then
         self.frame = self.frame + 1
         self.frameTime = 0
 
         -- Get the number of frames in the current state and direction's animation
         local numFrames = #spriteMap["Cody"][self.state][self.direction]
-        if self.frame > numFrames then self.frame = 1 end
+        if self.frame > numFrames then
+            if self.state == "Plowing" then
+                self.state = "Standing" -- Return to Standing after Plowing completes
+                self.frame = 1
+                self.plowedThisAnimation = false -- Reset for next plowing
+            else
+                self.frame = 1 -- Loop non-Plowing animations
+            end
+        end
+
+        -- Update map tile to 56 when transitioning to frame 4 in Plowing
+        if self.state == "Plowing" and self.frame == 4 and not self.plowedThisAnimation then
+            local playerTileX = math.floor((self.x + 16) / sprites.size) + 1
+            local playerTileY = math.floor(self.y / sprites.size) + 1
+            local targetTileX, targetTileY = playerTileX, playerTileY
+            if self.direction == "Left" then
+                targetTileX = playerTileX - 1
+            elseif self.direction == "Right" then
+                targetTileX = playerTileX + 1
+            elseif self.direction == "Up" then
+                targetTileY = playerTileY - 1
+            elseif self.direction == "Down" then
+                targetTileY = playerTileY + 1
+            end
+            -- Ensure the target tile is within map bounds and can be plowed
+            if self:canPlow(targetTileX, targetTileY) then
+                mapArray[targetTileY][targetTileX][1] = 56 -- Set tile type to 56
+                self.plowedThisAnimation = true -- Prevent multiple updates
+            end
+        end
+    end
+
+    -- Update plowing timer
+    if self.state == "Plowing" then
+        self.plowingTime = self.plowingTime + dt
+        if self.plowingTime >= 0.5 then
+            self.state = "Standing"
+            self.frame = 1
+            self.frameTime = 0
+            self.plowingTime = 0
+            self.plowedThisAnimation = false -- Reset for next plowing
+        end
+    end
+
+    -- Skip movement updates during Plowing
+    if self.state == "Plowing" then
+        return
     end
 
     -- Default state is "Standing" unless input changes it
@@ -114,6 +165,7 @@ function player:update(dt)
         self.vz = self.jumpForce
         self.isOnGround = false
         self.jump = false
+        print("self.vz is " .. self.vz)
     end
 
     -- Apply gravity while in air
@@ -201,18 +253,65 @@ function player:getTile(x, y)
     }
 end
 
+function player:canPlow(targetTileX, targetTileY)
+    -- Check if the target tile is within bounds, is grass (type 1), and has the same elevation as the player
+    if targetTileY >= 1 and targetTileY <= #mapArray and targetTileX >= 1 and targetTileX <= #mapArray[targetTileY] then
+        local tileType = mapArray[targetTileY][targetTileX][1]
+        local tileZ = mapArray[targetTileY][targetTileX][2]
+        return tileType == 1 and tileZ == self.z
+    end
+    return false
+end
+
 function player:keypressed(key)
     if key == "space" then
-        self.state = "Jumping-Start"
-        self.direction = "Down"
-        self.frame = 1
+        if self.isOnGround then
+            self.state = "Jumping-Start"
+            self.direction = "Down"
+            self.frame = 1
+            local jumpSound = sounds.jump:clone() -- Clone the sound source
+            jumpSound:setVolume(love.math.random(0.8, 1.0)) -- Random volume
+            jumpSound:play() -- Play jump sound
+            print("Space pressed, jump sound played")
+        end
+    elseif key == "p" then
+        -- Only plow if the target tile is grass and at the same elevation
+        local playerTileX = math.floor((self.x + 16) / sprites.size) + 1
+        local playerTileY = math.floor(self.y / sprites.size) + 1
+        local targetTileX, targetTileY = playerTileX, playerTileY
+        if self.direction == "Left" then
+            targetTileX = playerTileX - 1
+        elseif self.direction == "Right" then
+            targetTileX = playerTileX + 1
+        elseif self.direction == "Up" then
+            targetTileY = playerTileY - 1
+        elseif self.direction == "Down" then
+            targetTileY = playerTileY + 1
+        end
+        if self:canPlow(targetTileX, targetTileY) then
+            self.state = "Plowing"
+            self.frame = 1
+            self.frameTime = 0
+            self.plowingTime = 0
+            self.plowedThisAnimation = false
+            local shovelSound = sounds.shovel:clone() -- Clone the sound source
+            shovelSound:setPitch(love.math.random(0.9, 1.1)) -- Random pitch
+            shovelSound:setVolume(love.math.random(0.8, 1.0)) -- Random volume
+            shovelSound:play() -- Play shovel sound
+            print("P pressed, shovel sound played")
+        end
     end
 end
 
 function player:keyreleased(key)
     if key == "space" then
-        if (self.jump == false and self.isOnGround == true) then
+        print("Space key released")
+        print("The self.jump is " .. tostring(self.jump))
+        print("The self.isOnGround is " .. tostring(self.isOnGround))
+
+        if self.jump == false and self.isOnGround == true then
             self.jump = true
+            print("The self.jump NOW is " .. tostring(self.jump))
         end
     end
 end
@@ -248,8 +347,6 @@ function player:draw(cameraX, cameraY)
         love.graphics.setBlendMode('alpha')
         shader.sprite:send("angle", shadow.angle)   
         shader.sprite:send("colorMapCanvas", canvas.colorMap)
-        shader.sprite:send("spriteLeftX", characterScreenX + 32/2 - 200/2)    
-        shader.sprite:send("spriteTopY", characterScreenY - 128 + player.shadowZ)
         shader.sprite:send("spriteHeight",200.0)
         shader.sprite:send("spriteWidth",200.0)
         shader.sprite:send("spriteBase", ((200-112)/2+80))
@@ -265,7 +362,7 @@ function player:draw(cameraX, cameraY)
         love.graphics.draw(
             canvas.temp,
             characterScreenX + 32/2 - 200/2,
-            characterScreenY - 128 + player.shadowZ --+ playerZ       --128 = base + (200-112)/2 
+            characterScreenY - 128 + player.shadowZ
         )
         love.graphics.setShader()
     end
@@ -273,8 +370,32 @@ function player:draw(cameraX, cameraY)
     love.graphics.setCanvas(canvas.object)
     love.graphics.draw(
         canvas.temp,
-        characterScreenX + 32/2  - 200/2,
-        characterScreenY - 128 + player.z       --128 = base + (200-112)/2 
+        characterScreenX + 32/2 - 200/2,
+        characterScreenY - 128 + player.z
     )
+end
 
+function player:drawOutline(cameraX, cameraY, mapArray)
+    love.graphics.setCanvas(canvas.offscreen)
+    love.graphics.setColor(1, 1, 0, 1) -- Yellow outline for visibility
+    local playerTileX = math.floor((self.x + 16) / sprites.size) + 1
+    local playerTileY = math.floor(self.y / sprites.size) + 1
+    local targetTileX, targetTileY = playerTileX, playerTileY
+    if self.direction == "Left" then
+        targetTileX = playerTileX - 1
+    elseif self.direction == "Right" then
+        targetTileX = playerTileX + 1
+    elseif self.direction == "Up" then
+        targetTileY = playerTileY - 1
+    elseif self.direction == "Down" then
+        targetTileY = playerTileY + 1
+    end
+    -- Only draw outline if the target tile is grass (type 1) and at the same elevation
+    if self:canPlow(targetTileX, targetTileY) then
+        local targetX = (targetTileX - 1) * sprites.size - cameraX
+        local targetY = (targetTileY - 1) * sprites.size - cameraY
+        local z = mapArray[targetTileY][targetTileX][2]
+        love.graphics.rectangle("line", targetX, targetY + z, sprites.size, sprites.size)
+    end
+    love.graphics.setColor(1, 1, 1, 1) -- Reset color
 end
