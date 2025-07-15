@@ -91,8 +91,8 @@ function player:update(dt)
             elseif self.direction == "Down" then
                 targetTileY = playerTileY + 1
             end
-            -- Ensure the target tile is within map bounds
-            if targetTileY >= 1 and targetTileY <= #mapArray and targetTileX >= 1 and targetTileX <= #mapArray[targetTileY] then
+            -- Ensure the target tile is within map bounds and can be plowed
+            if self:canPlow(targetTileX, targetTileY) then
                 mapArray[targetTileY][targetTileX][1] = 56 -- Set tile type to 56
                 self.plowedThisAnimation = true -- Prevent multiple updates
             end
@@ -253,17 +253,53 @@ function player:getTile(x, y)
     }
 end
 
+function player:canPlow(targetTileX, targetTileY)
+    -- Check if the target tile is within bounds, is grass (type 1), and has the same elevation as the player
+    if targetTileY >= 1 and targetTileY <= #mapArray and targetTileX >= 1 and targetTileX <= #mapArray[targetTileY] then
+        local tileType = mapArray[targetTileY][targetTileX][1]
+        local tileZ = mapArray[targetTileY][targetTileX][2]
+        return tileType == 1 and tileZ == self.z
+    end
+    return false
+end
+
 function player:keypressed(key)
     if key == "space" then
-        self.state = "Jumping-Start"
-        self.direction = "Down"
-        self.frame = 1
+        if self.isOnGround then
+            self.state = "Jumping-Start"
+            self.direction = "Down"
+            self.frame = 1
+            local jumpSound = sounds.jump:clone() -- Clone the sound source
+            jumpSound:setVolume(love.math.random(0.8, 1.0)) -- Random volume
+            jumpSound:play() -- Play jump sound
+            print("Space pressed, jump sound played")
+        end
     elseif key == "p" then
-        self.state = "Plowing"
-        self.frame = 1
-        self.frameTime = 0
-        self.plowingTime = 0
-        self.plowedThisAnimation = false
+        -- Only plow if the target tile is grass and at the same elevation
+        local playerTileX = math.floor((self.x + 16) / sprites.size) + 1
+        local playerTileY = math.floor(self.y / sprites.size) + 1
+        local targetTileX, targetTileY = playerTileX, playerTileY
+        if self.direction == "Left" then
+            targetTileX = playerTileX - 1
+        elseif self.direction == "Right" then
+            targetTileX = playerTileX + 1
+        elseif self.direction == "Up" then
+            targetTileY = playerTileY - 1
+        elseif self.direction == "Down" then
+            targetTileY = playerTileY + 1
+        end
+        if self:canPlow(targetTileX, targetTileY) then
+            self.state = "Plowing"
+            self.frame = 1
+            self.frameTime = 0
+            self.plowingTime = 0
+            self.plowedThisAnimation = false
+            local shovelSound = sounds.shovel:clone() -- Clone the sound source
+            shovelSound:setPitch(love.math.random(0.9, 1.1)) -- Random pitch
+            shovelSound:setVolume(love.math.random(0.8, 1.0)) -- Random volume
+            shovelSound:play() -- Play shovel sound
+            print("P pressed, shovel sound played")
+        end
     end
 end
 
@@ -273,7 +309,7 @@ function player:keyreleased(key)
         print("The self.jump is " .. tostring(self.jump))
         print("The self.isOnGround is " .. tostring(self.isOnGround))
 
-        if (self.jump == false and self.isOnGround == true) then
+        if self.jump == false and self.isOnGround == true then
             self.jump = true
             print("The self.jump NOW is " .. tostring(self.jump))
         end
@@ -354,8 +390,8 @@ function player:drawOutline(cameraX, cameraY, mapArray)
     elseif self.direction == "Down" then
         targetTileY = playerTileY + 1
     end
-    -- Ensure the target tile is within map bounds
-    if targetTileY >= 1 and targetTileY <= #mapArray and targetTileX >= 1 and targetTileX <= #mapArray[targetTileY] then
+    -- Only draw outline if the target tile is grass (type 1) and at the same elevation
+    if self:canPlow(targetTileX, targetTileY) then
         local targetX = (targetTileX - 1) * sprites.size - cameraX
         local targetY = (targetTileY - 1) * sprites.size - cameraY
         local z = mapArray[targetTileY][targetTileX][2]

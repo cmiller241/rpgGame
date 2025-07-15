@@ -26,6 +26,8 @@ end
 function love.keypressed(key)
     if key == "c" then
         canvas.showColorMap = not canvas.showColorMap
+    elseif key == "a" or key == "s" or key == "r" then
+        ui:keypressed(key)
     else
         player:keypressed(key)
     end
@@ -42,6 +44,7 @@ function love.update(dt)
     while accumulator >= fixedDt do
         player:update(fixedDt)
         shadow:update(fixedDt)
+        ui:update(fixedDt) -- Update UI animations
         accumulator = accumulator - fixedDt
     end
     alpha = accumulator / fixedDt
@@ -175,7 +178,7 @@ function love.draw()
         normalizedAngle = shadow.angle % 360 / 80.0
         lutNew = 96.0
         lutOld = 0
-    elseif (shadow.angle % 360 >= 80 and shadow.angle % 360 <= 100) then
+    elseif (shadow.angle % 360 >= 80 and shadow.angle <= 100) then
         normalizedAngle = shadow.angle % 360 / 90.0
         lutNew = 0
         lutOld = 0
@@ -227,18 +230,20 @@ function love.draw()
     love.graphics.setShader()
     love.graphics.draw(canvas.intermediate, scaleOffsetX, scaleOffsetY, 0, scaleFactor, scaleFactor)
 
+    -- Draw inventory UI
+    ui:drawInventory(appWidth, appHeight)
+
     love.graphics.setColor(1, 1, 1, 1)
     love.graphics.setFont(love.graphics.newFont(12))
+    local stats = love.graphics.getStats()
     love.graphics.print("Player Z: " .. player.z, 10, 10)
-    love.graphics.print("Player VZ: " .. player.vz, 10, 30)
-    love.graphics.print("IsOnGround: " .. tostring(player.isOnGround), 10, 50)
-    love.graphics.print("Player Jump: " .. tostring(player.jump), 10, 70)
-    love.graphics.print("Shadow Angle: " .. shadow.angle, 10, 90)
+    love.graphics.print("IsOnGround: " .. tostring(player.isOnGround), 10, 30)
+    love.graphics.print("Player Jump: " .. tostring(player.jump), 10, 50)
+    love.graphics.print("Shadow Angle: " .. shadow.angle, 10, 70)
+    love.graphics.print("Draw Calls: " .. stats.drawcalls, 10, 90)
+    love.graphics.print("Canvas Switches: " .. stats.canvasswitches, 10, 110)
     love.graphics.setFont(love.graphics.newFont(32))
     love.graphics.print("FPS: " .. love.timer.getFPS(), 10, 150)
-    local stats = love.graphics.getStats()
-    love.graphics.print("Draw Calls: " .. stats.drawcalls, 10, 170)
-    love.graphics.print("Canvas Switches: " .. stats.canvasswitches, 10, 190)
 end
 
 function updateDimensions()
