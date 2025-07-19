@@ -1,4 +1,13 @@
 function requireAll()
+    -- Load toolbarMap first to ensure it's available for player and ui
+    local success, result = pcall(function() return require("src/toolbarMap") end)
+    if success then
+        toolbarMap = result
+        print("toolbarMap loaded successfully: ", toolbarMap ~= nil)
+    else
+        print("Error loading src/toolbarMap: ", result)
+    end
+
     require("src/window")   -- Handles window-related configurations (e.g., window dimensions, scaling)
     require("src/canvas")   -- Handles canvas management (e.g., creating and managing drawing surfaces for various game elements)
     require("src/player")   -- Player object and related functions (e.g., movement, animations, states)
@@ -11,7 +20,7 @@ function requireAll()
     require("src/tallgrass") -- Tall grass object and related functions
     require("src/dirt")     -- Dirt object and related functions (e.g., drawing plowed dirt tiles)
     require("src/ui")       -- UI elements (e.g., inventory)
-    require("src/sounds")       -- Loading sounds
+    require("src/sounds")   -- Loading sounds
 
     -- Initialize the canvas after requiring window and canvas
     canvas:initialize(window.width, window.height)

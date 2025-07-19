@@ -84,7 +84,9 @@ function ui:drawInventory(appWidth, appHeight)
         local drawY = self.centerY
         local alpha = i == self.highlightedSlot and 1.0 or 0.5
         love.graphics.setColor(1, 1, 1, alpha)
-        love.graphics.draw(sprites.toolbar, sprites.toolbarQuads[i], drawX, drawY, 0, currentScale, currentScale, ox, oy)
+        -- Use the quad from visibleSlots
+        local quadIndex = toolbarMap.visibleSlots[i]
+        love.graphics.draw(sprites.toolbar, sprites.toolbarQuads[quadIndex], drawX, drawY, 0, currentScale, currentScale, ox, oy)
         currentX = currentX + slotSize + margin
     end
 
