@@ -21,6 +21,7 @@ function requireAll()
     require("src/dirt")     -- Dirt object and related functions (e.g., drawing plowed dirt tiles)
     require("src/ui")       -- UI elements (e.g., inventory)
     require("src/sounds")   -- Loading sounds
+    require("src/objects")
 
     -- Initialize the canvas after requiring window and canvas
     canvas:initialize(window.width, window.height)

@@ -12,6 +12,7 @@ sprites.tallgrassBatch = love.graphics.newSpriteBatch(sprites.tree, 1600)
 sprites.grungeOverlay = love.graphics.newImage("img/grunge3.jpg")
 sprites.lut = love.graphics.newImage("img/LUD2.png")
 sprites.toolbar = love.graphics.newImage("img/toolbar.png")
+sprites.objects = love.graphics.newImage("img/objects.png")
 sprites.size = 32
 
 -- Load quads for general sprites
@@ -37,3 +38,15 @@ sprites.grassQuad = love.graphics.newQuad(0, 0, 32, 27, sprites.grass:getDimensi
 sprites.treeTrunk = love.graphics.newQuad(0, 0, 480, 480, sprites.tree:getDimensions())
 sprites.treeFoliage = love.graphics.newQuad(480, 0, 480, 480, sprites.tree:getDimensions())
 sprites.pineTree = love.graphics.newQuad(960, 0, 480, 480, sprites.tree:getDimensions())
+
+-- Load quads for objects spritesheet (640x640, 64x64 tiles)
+sprites.objectQuads = {}
+for i = 1, math.ceil(sprites.objects:getHeight() / 64) do
+    for j = 1, math.ceil(sprites.objects:getWidth() / 64) do
+        sprites.objectQuads[(i - 1) * math.ceil(sprites.objects:getWidth() / 64) + j] =
+            love.graphics.newQuad((j-1) * 64, (i-1) * 64, 64, 64, sprites.objects:getDimensions())
+    end
+end
+
+-- Bible page animation frame
+sprites.biblePageCenter = sprites.objectQuads[1] -- First frame: centered

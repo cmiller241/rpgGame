@@ -15,6 +15,12 @@ function love.load()
     require("src/require")
     requireAll()
 
+    -- Initialize objects array with Bible pages
+    objects = {
+        {x = 200, y = 200, animationTime = 0},
+        {x = 300, y = 400, animationTime = 0}
+    }
+
     updateDimensions()
 end
 
@@ -45,6 +51,10 @@ function love.update(dt)
         player:update(fixedDt)
         shadow:update(fixedDt)
         ui:update(fixedDt) -- Update UI animations
+        -- Update object animations
+        for _, obj in ipairs(objects) do
+            obj.animationTime = obj.animationTime + fixedDt
+        end
         accumulator = accumulator - fixedDt
     end
     alpha = accumulator / fixedDt
@@ -169,6 +179,14 @@ function love.draw()
             drawTreeBatches(cameraX, cameraY)
             love.graphics.setCanvas(canvas.object)
             player:draw(cameraX, cameraY, alpha)
+        end
+
+        -- Draw objects in the current row
+        for _, obj in ipairs(objects) do
+            local objectRow = math.floor(obj.y / sprites.size) + 2
+            if objectRow == yC then
+                object:drawSingle(obj, cameraX, cameraY)
+            end
         end
         ::continueY::
     end

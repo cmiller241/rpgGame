@@ -369,7 +369,7 @@ function player:keypressed(key)
             jumpSound:play() -- Play jump sound
             print("Space pressed, jump sound played")
         end
-    elseif key == "p" then
+    elseif key == "f" then
         if not toolbarMap then
             if not toolbarMapErrorPrinted then
                 print("Error: toolbarMap is nil in player:keypressed")
@@ -402,7 +402,7 @@ function player:keypressed(key)
                 shovelSound:setPitch(love.math.random(0.9, 1.1)) -- Random pitch
                 shovelSound:setVolume(love.math.random(0.8, 1.0)) -- Random volume
                 shovelSound:play() -- Play shovel sound
-                print("P pressed, shovel sound played")
+                print("F pressed, shovel sound played")
             end
         elseif highlightedTool == "Grass Seed" or highlightedTool == "Tomato Seed" or 
                highlightedTool == "Corn Seed" or highlightedTool == "Potato Seed" or 
