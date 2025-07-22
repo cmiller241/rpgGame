@@ -37,8 +37,18 @@ function object:drawSingle(obj, cameraX, cameraY)
         love.graphics.setShader()
     end
 
-    -- Draw Bible page
+    -- Draw Bible page with outline shader if player is near
     love.graphics.setCanvas(canvas.object)
     local yOffset = math.sin(obj.animationTime * 2 * math.pi) * 4
+    -- Calculate distance between player center and Bible page center
+    local dx = (player.x + 8) - (obj.x + 32)
+    local dy = (player.y) - (obj.y + 32 + yOffset)
+    local distance = math.sqrt(dx * dx + dy * dy)
+    if distance < 50 then
+        -- Apply outline shader and set player flag
+        love.graphics.setShader(shader.outline)
+        player.isNearOutlinedObject = true
+    end
     love.graphics.draw(sprites.objects, sprites.biblePageCenter, obj.x - cameraX, obj.y - cameraY + yOffset)
+    love.graphics.setShader()
 end

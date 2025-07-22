@@ -85,6 +85,8 @@ function love.update(dt)
         shadow.angle = shadow.angle - shadow.rotationSpeed * fixedDt
         if shadow.angle < 0 then shadow.angle = 0 end
     end
+
+    player.isNearOutlinedObject = false
 end
 
 function drawTreeBatches(cameraX, cameraY)
