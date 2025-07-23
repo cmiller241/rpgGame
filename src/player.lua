@@ -306,10 +306,20 @@ end
 
 function player:canPickUp()
     for _, obj in ipairs(objects) do
-        local dx = (self.x + 8) - (obj.x + 32)
-        local dy = self.y - (obj.y + 32)
+        local dx = self.x - obj.x
+        local dy = self.y - obj.y
         local distance = math.sqrt(dx * dx + dy * dy)
-        if distance < 50 then
+        local isFacing = false
+        if self.direction == "Up" and dy > 0 then
+            isFacing = true
+        elseif self.direction == "Down" and dy < 0 then
+            isFacing = true
+        elseif self.direction == "Left" and dx > 0 then
+            isFacing = true
+        elseif self.direction == "Right" and dx < 0 then
+            isFacing = true
+        end
+        if distance < 50 and isFacing then
             return true
         end
     end
