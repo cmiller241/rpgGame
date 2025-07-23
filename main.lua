@@ -17,7 +17,7 @@ function love.load()
 
     -- Initialize objects array with Bible pages
     objects = {
-        {x = 200, y = 200, animationTime = 0},
+        {x = 200, y = 250, animationTime = 0},
         {x = 300, y = 400, animationTime = 0}
     }
 
@@ -185,7 +185,7 @@ function love.draw()
 
         -- Draw objects in the current row
         for _, obj in ipairs(objects) do
-            local objectRow = math.floor(obj.y / sprites.size) + 2
+            local objectRow = math.floor((obj.y) / sprites.size) + 1
             if objectRow == yC then
                 object:drawSingle(obj, cameraX, cameraY)
             end

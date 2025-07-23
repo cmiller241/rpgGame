@@ -37,7 +37,8 @@ player.isNearOutlinedObject = false
 player.animations = {
     Plowing = { time = 0, done = false, tileType = 56, frameTrigger = 4, canFunc = "canPlow" },
     Sowing  = { time = 0, done = false, tileType = 72, frameTrigger = -1, canFunc = "canSow" },
-    Watering = { time = 0, done = false, tileType = 73, frameTrigger = 3, canFunc = "canWater" }
+    Watering = { time = 0, done = false, tileType = 73, frameTrigger = 3, canFunc = "canWater" },
+    PickUp = { time = 0, done = false, frameTrigger = 3, canFunc = "canPickUp" }
 }
 
 local toolbarMapErrorPrinted = false
@@ -58,9 +59,13 @@ function player:handleToolAnimation(state, frame, numFrames)
     if not anim then return end
     local trigger = anim.frameTrigger == -1 and (numFrames - 1) or anim.frameTrigger
     if self.frame == trigger and not anim.done then
-        local tx, ty = self:getTargetTile()
-        if self[anim.canFunc](self, tx, ty) then
-            mapArray[ty][tx][1] = anim.tileType
+        if state ~= "PickUp" then
+            local tx, ty = self:getTargetTile()
+            if self[anim.canFunc](self, tx, ty) then
+                mapArray[ty][tx][1] = anim.tileType
+                anim.done = true
+            end
+        else
             anim.done = true
         end
     end
@@ -80,14 +85,14 @@ end
 function player:update(dt)
     local prevState, prevDir = self.state, self.direction
     local isToolState = self.animations[self.state]
-    local frameDuration = isToolState and 0.125 or 0.2
+    local frameDuration = spriteMap.Cody[self.state][self.direction].frames[self.frame].duration or 0.2
     self.frameTime = self.frameTime + dt
 
     if self.frameTime >= frameDuration then
         self.frame = self.frame + 1
         self.frameTime = 0
 
-        local numFrames = #spriteMap["Cody"][self.state][self.direction]
+        local numFrames = #spriteMap.Cody[self.state][self.direction].frames
         if self.frame > numFrames then
             if isToolState then
                 self:resetToolState(self.state)
@@ -101,9 +106,11 @@ function player:update(dt)
 
     if isToolState then
         local anim = self.animations[self.state]
-        anim.time = anim.time + dt
-        if anim.time >= 0.5 then
-            self:resetToolState(self.state)
+        if anim then
+            anim.time = anim.time + dt
+            if anim.time >= 0.5 then
+                self:resetToolState(self.state)
+            end
         end
         return
     end
@@ -162,41 +169,51 @@ function player:keypressed(key)
         self.state = "Jumping-Start"
         self.direction = "Down"
         self.frame = 1
-        local s = sounds.jump:clone()
-        s:setVolume(0.1)
-        s:play()
     elseif key == "f" then
-        if not toolbarMap then
-            if not toolbarMapErrorPrinted then
-                print("Error: toolbarMap is nil in player:keypressed")
-                toolbarMapErrorPrinted = true
-            end
-            return
-        end
-        local slot = toolbarMap.slots[toolbarMap.visibleSlots[ui.highlightedSlot]]
-        local tool = slot.name
-        local tx, ty = self:getTargetTile()
-
-        local function triggerTool(state, canFunc, sound)
-            if self[canFunc](self, tx, ty) then
-                self.state = state
+        if self.isNearOutlinedObject then
+            if self:canPickUp() then
+                object:removeNearest(self.x + 8, self.y)
+                self.state = "PickUp"
                 self.frame, self.frameTime = 1, 0
-                local anim = self.animations[state]
+                local anim = self.animations["PickUp"]
                 anim.time = 0
                 anim.done = false
-                local s = (sounds[sound] or sounds.shovel):clone()
+                local s = (sounds.sow or sounds.shovel):clone()
                 s:setPitch(love.math.random(0.9, 1.1))
                 s:setVolume(love.math.random(0.8, 1.0))
                 s:play()
             end
-        end
+        elseif toolbarMap then
+            local slot = toolbarMap.slots[toolbarMap.visibleSlots[ui.highlightedSlot]]
+            local tool = slot.name
+            local tx, ty = self:getTargetTile()
 
-        if tool == "Hoe" then
-            triggerTool("Plowing", "canPlow", "shovel")
-        elseif tool == "Watering Can" then
-            triggerTool("Watering", "canWater", "water")
-        elseif tool:find("Seed") then
-            triggerTool("Sowing", "canSow", "sow")
+            local function triggerTool(state, canFunc, sound)
+                if self[canFunc](self, tx, ty) then
+                    self.state = state
+                    self.frame, self.frameTime = 1, 0
+                    local anim = self.animations[state]
+                    anim.time = 0
+                    anim.done = false
+                    local s = (sounds[sound] or sounds.shovel):clone()
+                    s:setPitch(love.math.random(0.9, 1.1))
+                    s:setVolume(love.math.random(0.8, 1.0))
+                    s:play()
+                end
+            end
+
+            if tool == "Hoe" then
+                triggerTool("Plowing", "canPlow", "shovel")
+            elseif tool == "Watering Can" then
+                triggerTool("Watering", "canWater", "water")
+            elseif tool:find("Seed") then
+                triggerTool("Sowing", "canSow", "sow")
+            end
+        else
+            if not toolbarMapErrorPrinted then
+                print("Error: toolbarMap is nil in player:keypressed")
+                toolbarMapErrorPrinted = true
+            end
         end
     end
 end
@@ -287,12 +304,24 @@ function player:canWater(tx, ty)
     return false
 end
 
+function player:canPickUp()
+    for _, obj in ipairs(objects) do
+        local dx = (self.x + 8) - (obj.x + 32)
+        local dy = self.y - (obj.y + 32)
+        local distance = math.sqrt(dx * dx + dy * dy)
+        if distance < 50 then
+            return true
+        end
+    end
+    return false
+end
+
 function player:draw(cameraX, cameraY)
     local characterScreenX = self.x - cameraX
     local characterScreenY = self.y - cameraY
     local flipX = self.direction == "Left" and -1 or 1
     local flipOffsetX = self.direction == "Left" and 100 or 0
-    local spriteNumber = spriteMap["Cody"][self.state][self.direction][self.frame]
+    local spriteNumber = spriteMap.Cody[self.state][self.direction].frames[self.frame].sprite
 
     love.graphics.setCanvas(canvas.temp)
     love.graphics.draw(self.spriteSheet, self.quads[spriteNumber], 100 - 56, 100 - 56, 0, flipX, 1, flipOffsetX, 0)

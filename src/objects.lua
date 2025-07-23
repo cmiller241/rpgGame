@@ -41,14 +41,40 @@ function object:drawSingle(obj, cameraX, cameraY)
     love.graphics.setCanvas(canvas.object)
     local yOffset = math.sin(obj.animationTime * 2 * math.pi) * 4
     -- Calculate distance between player center and Bible page center
-    local dx = (player.x + 8) - (obj.x + 32)
-    local dy = (player.y) - (obj.y + 32 + yOffset)
+    local dx = (player.x) - (obj.x)
+    local dy = (player.y) - (obj.y)
     local distance = math.sqrt(dx * dx + dy * dy)
     if distance < 50 then
         -- Apply outline shader and set player flag
         love.graphics.setShader(shader.outline)
         player.isNearOutlinedObject = true
     end
-    love.graphics.draw(sprites.objects, sprites.biblePageCenter, obj.x - cameraX, obj.y - cameraY + yOffset)
+    love.graphics.draw(sprites.objects, sprites.biblePageCenter, obj.x - 32 - cameraX, obj.y - 64 - cameraY + yOffset)
     love.graphics.setShader()
+
+    -- Draw debug circles for player and object coordinates
+    love.graphics.setCanvas(canvas.object)
+    -- Red circle for player position (player.x, player.y)
+    love.graphics.setColor(1, 0, 0, 1) -- Red
+    love.graphics.circle("fill", player.x - cameraX, player.y - cameraY, 5)
+    -- Yellow circle for object position (obj.x, obj.y)
+    love.graphics.setColor(1, 1, 0, 1) -- Yellow
+    love.graphics.circle("fill", obj.x - cameraX, obj.y - cameraY, 5)
+    love.graphics.setColor(1, 1, 1, 1) -- Reset color
+end
+
+function object:removeNearest(playerX, playerY)
+    local nearestIndex, minDistance = nil, math.huge
+    for i, obj in ipairs(objects) do
+        local dx = playerX - (obj.x + 32)
+        local dy = playerY - (obj.y + 32)
+        local distance = math.sqrt(dx * dx + dy * dy)
+        if distance < 50 and distance < minDistance then
+            minDistance = distance
+            nearestIndex = i
+        end
+    end
+    if nearestIndex then
+        table.remove(objects, nearestIndex)
+    end
 end
