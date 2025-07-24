@@ -27,6 +27,7 @@ end
 function love.resize(w, h)
     appWidth, appHeight = w, h
     updateDimensions()
+    ui:resize(appWidth, appHeight)
 end
 
 function love.keypressed(key)

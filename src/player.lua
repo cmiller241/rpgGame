@@ -85,7 +85,7 @@ end
 function player:update(dt)
     local prevState, prevDir = self.state, self.direction
     local isToolState = self.animations[self.state]
-    local frameDuration = spriteMap.Cody[self.state][self.direction].frames[self.frame].duration or 0.2
+    local frameDuration = spriteMap.Cody[self.state][self.direction].frames[self.frame].duration or 5.0
     self.frameTime = self.frameTime + dt
 
     if self.frameTime >= frameDuration then
@@ -107,8 +107,13 @@ function player:update(dt)
     if isToolState then
         local anim = self.animations[self.state]
         if anim then
+            -- Calculate total animation duration
+            local totalDuration = 0
+            for _, frame in ipairs(spriteMap.Cody[self.state][self.direction].frames) do
+                totalDuration = totalDuration + frame.duration
+            end
             anim.time = anim.time + dt
-            if anim.time >= 0.5 then
+            if anim.time >= totalDuration then
                 self:resetToolState(self.state)
             end
         end
@@ -359,6 +364,39 @@ function player:draw(cameraX, cameraY)
 
     love.graphics.setCanvas(canvas.object)
     love.graphics.draw(canvas.temp, characterScreenX + 16 - 100, characterScreenY - 128 + self.z)
+
+    -- Draw Bible page in player's hands during PickUp animation
+    if self.state == "PickUp" then
+        self.direction = "Down"
+        local pageOffsetX, pageOffsetY = 0, 0
+        local anim = self.animations["PickUp"]
+        if self.frame == 1 then
+            pageOffsetX = flipX * 1 -- Slightly forward, near feet
+            pageOffsetY = 30 -- Near ground
+        elseif self.frame == 2 then
+            pageOffsetX = flipX * 1 -- Near chest
+            pageOffsetY = 10 -- Chest level
+        elseif self.frame == 3 then
+            pageOffsetX = flipX * 1 -- Centered above head
+            local frameStartTime = 0.125 + 0.125 -- Time when frame 3 starts
+            local t = math.min((anim.time - frameStartTime) / 1.0, 1.0) -- Normalized time (0 to 1)
+            pageOffsetY = -40 + t * (-60 - (-40)) -- Linear interpolation from -40 to -45
+        end
+        love.graphics.draw(
+            sprites.objects,
+            sprites.biblePageCenter,
+            characterScreenX + 16 - 32 + pageOffsetX,
+            characterScreenY - 64 + self.z + pageOffsetY,
+            0,
+            1,
+            1,
+            0,
+            0
+        )
+        if self.frame == 2 and self.direction == "Down" then 
+            love.graphics.draw(self.spriteSheet, self.quads[97], characterScreenX + 16 - 55, characterScreenY - 84 + self.z, 0, flipX, 1, flipOffsetX, 0)
+        end
+    end
 end
 
 function player:drawOutline(cameraX, cameraY, mapArray)

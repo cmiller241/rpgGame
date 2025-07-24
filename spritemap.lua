@@ -49,10 +49,10 @@ local spriteMap = {
             Left = { frames = { { sprite = 121, duration = 0.125 }, { sprite = 122, duration = 0.125 }, { sprite = 123, duration = 0.125 }, { sprite = 124, duration = 0.125 } } }
         },
         PickUp = {
-            Down = { frames = { { sprite = 95, duration = 0.125 }, { sprite = 96, duration = 0.125 }, { sprite = 98, duration = 0.35 } } },
-            Up = { frames = { { sprite = 95, duration = 0.125 }, { sprite = 96, duration = 0.125 }, { sprite = 98, duration = 0.35 } } },
-            Right = { frames = { { sprite = 95, duration = 0.125 }, { sprite = 96, duration = 0.125 }, { sprite = 98, duration = 0.35 } } },
-            Left = { frames = { { sprite = 95, duration = 0.125 }, { sprite = 96, duration = 0.125 }, { sprite = 98, duration = 0.35 } } }
+            Down = { frames = { { sprite = 95, duration = 0.125 }, { sprite = 96, duration = 0.125 }, { sprite = 98, duration = 1 } } },
+            Up = { frames = { { sprite = 110, duration = 0.125 }, { sprite = 111, duration = 0.125 }, { sprite = 112, duration = 1 } } },
+            Right = { frames = { { sprite = 125, duration = 0.125 }, { sprite = 126, duration = 0.125 }, { sprite = 127, duration = 1 } } },
+            Left = { frames = { { sprite = 125, duration = 0.125 }, { sprite = 126, duration = 0.125 }, { sprite = 127, duration = 1 } } }
         }
     }
 }

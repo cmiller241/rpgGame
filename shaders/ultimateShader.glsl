@@ -57,8 +57,9 @@ vec4 effect(vec4 color, Image texture, vec2 textureCoords, vec2 screenCoords) {
                 }
             }
             if (shadowPixel.a != 0.0 && angle < 180 && angle > 0) {                        //Mix shadow, grass, & partially transparent object pixel together, if needed
-                vec4 shadowedOffscreenPixel = mix(offscreenPixel, shadowPixel, shadowPixel.a * shadowAlpha);
-                currentPixel = mix(shadowedOffscreenPixel, objectPixel, objectPixel.a);
+                currentPixel.rgb *= mix(1.0, 0.5, shadowPixel.a * shadowAlpha);
+                //vec4 shadowedOffscreenPixel = mix(offscreenPixel, shadowPixel, shadowPixel.a * shadowAlpha);
+                //currentPixel = mix(shadowedOffscreenPixel, objectPixel, objectPixel.a);
             }
         }
         if (noSpotlight != 1.0) {                                                           //Let's do spotlight shadows now

@@ -63,14 +63,14 @@ function object:drawSingle(obj, cameraX, cameraY)
     love.graphics.setShader()
 
     -- Draw debug circles for player and object coordinates
-    love.graphics.setCanvas(canvas.object)
-    -- Red circle for player position (player.x, player.y)
-    love.graphics.setColor(1, 0, 0, 1) -- Red
-    love.graphics.circle("fill", player.x - cameraX, player.y - cameraY, 5)
-    -- Yellow circle for object position (obj.x, obj.y)
-    love.graphics.setColor(1, 1, 0, 1) -- Yellow
-    love.graphics.circle("fill", obj.x - cameraX, obj.y - cameraY, 5)
-    love.graphics.setColor(1, 1, 1, 1) -- Reset color
+    -- love.graphics.setCanvas(canvas.object)
+    -- -- Red circle for player position (player.x, player.y)
+    -- love.graphics.setColor(1, 0, 0, 1) -- Red
+    -- love.graphics.circle("fill", player.x - cameraX, player.y - cameraY, 5)
+    -- -- Yellow circle for object position (obj.x, obj.y)
+    -- love.graphics.setColor(1, 1, 0, 1) -- Yellow
+    -- love.graphics.circle("fill", obj.x - cameraX, obj.y - cameraY, 5)
+    -- love.graphics.setColor(1, 1, 1, 1) -- Reset color
 end
 
 function object:removeNearest(playerX, playerY)

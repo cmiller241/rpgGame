@@ -30,6 +30,9 @@ function ui:drawInventory(appWidth, appHeight)
         return -- Skip drawing if fully hidden
     end
 
+    -- Update appHeight to ensure latest dimensions
+    self.appHeight = appHeight
+
     local baseSlotSize = self.baseSlotSize
     local defaultScale = self.defaultScale
     local numSlots = 10 -- Number of inventory slots
@@ -55,8 +58,7 @@ function ui:drawInventory(appWidth, appHeight)
         margin = minMargin
     end
 
-    -- Store appHeight and highlightScale
-    self.appHeight = appHeight
+    -- Store highlightScale
     self.highlightScale = highlightScale
 
     -- Update target scales for animation
@@ -64,8 +66,8 @@ function ui:drawInventory(appWidth, appHeight)
         self.slotTargetScales[i] = i == self.highlightedSlot and highlightScale or scale
     end
 
-    -- Initialize centerY if not set
-    if self.centerY == 0 then
+    -- Initialize or update centerY if not set or outdated
+    if self.centerY == 0 or math.abs(self.centerY - (appHeight - baseSlotSize * highlightScale / 2 - 10)) > 0.001 then
         self.centerY = appHeight - baseSlotSize * highlightScale / 2 - 10
         self.targetCenterY = self.centerY
     end
@@ -91,6 +93,14 @@ function ui:drawInventory(appWidth, appHeight)
     end
 
     love.graphics.setColor(1, 1, 1, 1)
+end
+
+function ui:resize(appWidth, appHeight)
+    -- Update appHeight and reposition toolbar
+    self.appHeight = appHeight
+    -- Recalculate target centerY based on new appHeight
+    self.targetCenterY = appHeight - self.baseSlotSize * self.highlightScale / 2 - 10
+    self.centerYTimer = 0 -- Trigger animation to new position
 end
 
 function ui:update(dt)
