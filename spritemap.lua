@@ -33,7 +33,7 @@ local spriteMap = {
         Plowing = {
             Down = { frames = { { sprite = 46, duration = 0.125 }, { sprite = 47, duration = 0.125 }, { sprite = 48, duration = 0.125 }, { sprite = 49, duration = 0.125 } } },
             Up = { frames = { { sprite = 61, duration = 0.125 }, { sprite = 62, duration = 0.125 }, { sprite = 63, duration = 0.125 }, { sprite = 64, duration = 0.125 } } },
-            Right = { frames = { { sprite = 76, duration = 0.125 }, { sprite = 77, duration = 0.125 }, { sprite = 78, duration = 0.125 }, { sprite = 79, duration = 0.125 } } },
+            Right = { frames = { { sprite = 76, duration = 0.1 }, { sprite = 77, duration = 0.1 }, { sprite = 78, duration = 0.1 }, { sprite = 79, duration = 0.1 } } },
             Left = { frames = { { sprite = 76, duration = 0.125 }, { sprite = 77, duration = 0.125 }, { sprite = 78, duration = 0.125 }, { sprite = 79, duration = 0.125 } } }
         },
         Sowing = {

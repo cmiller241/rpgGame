@@ -22,6 +22,8 @@ function requireAll()
     require("src/ui")       -- UI elements (e.g., inventory)
     require("src/sounds")   -- Loading sounds
     require("src/objects")
+    require("src/message")
+    require("src/map")
 
     -- Initialize the canvas after requiring window and canvas
     canvas:initialize(window.width, window.height)

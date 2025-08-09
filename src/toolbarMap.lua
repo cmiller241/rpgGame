@@ -1,3 +1,4 @@
+-- toolbarMap.lua
 local toolbarMap = {
     slots = {
         { quad = 1, name = "Empty" },
@@ -15,7 +16,7 @@ local toolbarMap = {
         { quad = 13, name = "Potato Seed" },
         { quad = 14, name = "Carrot Seed" },
     },
-    visibleSlots = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10} -- Default: first 10 quads
+    visibleSlots = {1, 1, 1, 1, 1, 1, 1, 1, 1, 1} -- All empty slots initially
 }
 
 return toolbarMap

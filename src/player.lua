@@ -76,13 +76,18 @@ function player:resetToolState(state)
     if anim then
         anim.time = 0
         anim.done = false
-        self.state = "Standing"
-        self.frame = 1
-        self.frameTime = 0
+        if state ~= "PickUp" then
+            self.state = "Standing"
+            self.frame = 1
+            self.frameTime = 0
+        else
+            message:show()
+        end
     end
 end
 
 function player:update(dt)
+    if message.isActive then return end
     local prevState, prevDir = self.state, self.direction
     local isToolState = self.animations[self.state]
     local frameDuration = spriteMap.Cody[self.state][self.direction].frames[self.frame].duration or 5.0
@@ -177,16 +182,43 @@ function player:keypressed(key)
     elseif key == "f" then
         if self.isNearOutlinedObject then
             if self:canPickUp() then
-                object:removeNearest(self.x + 8, self.y)
-                self.state = "PickUp"
-                self.frame, self.frameTime = 1, 0
-                local anim = self.animations["PickUp"]
-                anim.time = 0
-                anim.done = false
-                local s = (sounds.sow or sounds.shovel):clone()
-                s:setPitch(love.math.random(0.9, 1.1))
-                s:setVolume(love.math.random(0.8, 1.0))
-                s:play()
+                -- Find the nearest object and store its message
+                local nearestObj, minDistance = nil, math.huge
+                for _, obj in ipairs(objects) do
+                    local dx = self.x - obj.x
+                    local dy = self.y - obj.y
+                    local distance = math.sqrt(dx * dx + dy * dy)
+                    local isFacing = false
+                    if self.direction == "Up" and dy > 0 then
+                        isFacing = true
+                    elseif self.direction == "Down" and dy < 0 then
+                        isFacing = true
+                    elseif self.direction == "Left" and dx > 0 then
+                        isFacing = true
+                    elseif self.direction == "Right" and dx < 0 then
+                        isFacing = true
+                    end
+                    if distance < 50 and isFacing and distance < minDistance then
+                        minDistance = distance
+                        nearestObj = obj
+                    end
+                end
+                if nearestObj then
+                    message.text = nearestObj.message
+                    message.verse = nearestObj.verse
+                    message.tool = nearestObj.tool
+                    message.toolMessage = nearestObj.toolMessage or ""
+                    object:removeNearest(self.x, self.y)
+                    self.state = "PickUp"
+                    self.frame, self.frameTime = 1, 0
+                    local anim = self.animations["PickUp"]
+                    anim.time = 0
+                    anim.done = false
+                    local s = (sounds.sow or sounds.shovel):clone()
+                    s:setPitch(love.math.random(0.9, 1.1))
+                    s:setVolume(love.math.random(0.8, 1.0))
+                    s:play()
+                end
             end
         elseif toolbarMap then
             local slot = toolbarMap.slots[toolbarMap.visibleSlots[ui.highlightedSlot]]
@@ -365,22 +397,28 @@ function player:draw(cameraX, cameraY)
     love.graphics.setCanvas(canvas.object)
     love.graphics.draw(canvas.temp, characterScreenX + 16 - 100, characterScreenY - 128 + self.z)
 
-    -- Draw Bible page in player's hands during PickUp animation
-    if self.state == "PickUp" then
+    -- Draw Bible page in player's hands during PickUp animation or when message is active
+    if self.state == "PickUp" or message.isActive then
         self.direction = "Down"
         local pageOffsetX, pageOffsetY = 0, 0
         local anim = self.animations["PickUp"]
-        if self.frame == 1 then
-            pageOffsetX = flipX * 1 -- Slightly forward, near feet
-            pageOffsetY = 30 -- Near ground
-        elseif self.frame == 2 then
-            pageOffsetX = flipX * 1 -- Near chest
-            pageOffsetY = 10 -- Chest level
-        elseif self.frame == 3 then
-            pageOffsetX = flipX * 1 -- Centered above head
-            local frameStartTime = 0.125 + 0.125 -- Time when frame 3 starts
-            local t = math.min((anim.time - frameStartTime) / 1.0, 1.0) -- Normalized time (0 to 1)
-            pageOffsetY = -40 + t * (-60 - (-40)) -- Linear interpolation from -40 to -45
+        if self.state == "PickUp" and not message.isActive then
+            if self.frame == 1 then
+                pageOffsetX = flipX * 1 -- Slightly forward, near feet
+                pageOffsetY = 30 -- Near ground
+            elseif self.frame == 2 then
+                pageOffsetX = flipX * 1 -- Near chest
+                pageOffsetY = 10 -- Chest level
+            elseif self.frame == 3 then
+                pageOffsetX = flipX * 1 -- Centered above head
+                local frameStartTime = 0.125 + 0.125 -- Time when frame 3 starts
+                local t = math.min((anim.time - frameStartTime) / 1.0, 1.0) -- Normalized time (0 to 1)
+                pageOffsetY = -40 + t * (-60 - (-40)) -- Linear interpolation from -40 to -60
+            end
+        else
+            -- Message is active, draw Bible page at final position
+            pageOffsetX = flipX * 1
+            pageOffsetY = -60
         end
         love.graphics.draw(
             sprites.objects,

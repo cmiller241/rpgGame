@@ -13,6 +13,8 @@ sprites.grungeOverlay = love.graphics.newImage("img/grunge3.jpg")
 sprites.lut = love.graphics.newImage("img/LUD2.png")
 sprites.toolbar = love.graphics.newImage("img/toolbar.png")
 sprites.objects = love.graphics.newImage("img/objects.png")
+sprites.parchment = love.graphics.newImage("img/parchment.png")
+sprites.textbox = love.graphics.newImage("img/textbox.png")
 sprites.size = 32
 
 -- Load quads for general sprites

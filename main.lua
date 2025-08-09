@@ -2,10 +2,12 @@ local appWidth, appHeight
 local scaleFactor, scaleOffsetX, scaleOffsetY
 local accumulator = 0 -- For fixed time-step
 local alpha = 0 -- For interpolation
+local seed -- Pseudorandom seed for map updates
 
 function love.load()
     spriteMap = require("spriteMap")
     mapArray = require("maps.map01")
+    --message = require("message") -- Load message module
 
     love.window.setMode(1280, 800, {resizable=true, vsync=false})
     love.window.setTitle("Scattered Verses")
@@ -17,9 +19,45 @@ function love.load()
 
     -- Initialize objects array with Bible pages
     objects = {
-        {x = 200, y = 250, animationTime = 0},
-        {x = 300, y = 400, animationTime = 0}
+        {
+            x = 200, 
+            y = 250, 
+            animationTime = 0, 
+            message="Remember this: Whoever sows sparingly will also reap sparingly, and whoever sows generously will also reap generously. Each of you should give what you have decided in your heart to give, not reluctantly or under compulsion, for God loves a cheerful giver.", 
+            verse="2 Corinthians 9:6-7", 
+            tool=4,
+            toolMessage="You can now use a hoe. Dig up earth and plant seeds!"
+        },
+        {
+            x = 800, 
+            y = 450, 
+            animationTime = 0, 
+            message="Through thy precepts I get understanding: therefore I hate every false way. Thy Word is a lamp unto my feet and a light unto my path", 
+            verse="Psalm 119:104,105", 
+            tool=3,
+            toolMessage="You can now use a lamp. It will make your path easier at night and in caves!"
+        },
+        {
+            x = 300, 
+            y = 400, 
+            animationTime = 0, 
+            message="The Lord will guide you always; he will satisfy your needs in a sun-scorched land and will strengthen your frame. You will be like a well-watered garden, like a spring whose waters never fail.", 
+            verse="Isaiah 58:11", 
+            tool=9,
+            toolMessage="You can now use a watering can. This will allow you to water the seeds you plant in order to help them grow!"
+        },
+        {
+            x = 300, 
+            y = 650, 
+            animationTime = 0, 
+            message="For, ‘All people are like grass, and all their glory is like the flowers of the field; the grass withers and the flowers fall, but the word of the Lord endures forever.’ And this is the word that was preached to you.", 
+            verse="1 Peter 1:24-25", 
+            tool=10,
+            toolMessage="You can now plant grass!"
+        }
     }
+
+    seed = 1 -- Starting seed for xorshift16 map updates
 
     updateDimensions()
 end
@@ -31,6 +69,11 @@ function love.resize(w, h)
 end
 
 function love.keypressed(key)
+    if message.isActive then
+        if message:keypressed(key) then
+            return -- Key handled by message system
+        end
+    end
     if key == "c" then
         canvas.showColorMap = not canvas.showColorMap
     elseif key == "a" or key == "s" or key == "r" then
@@ -41,7 +84,9 @@ function love.keypressed(key)
 end
 
 function love.keyreleased(key)
-    player:keyreleased(key)
+    if not message.isActive then
+        player:keyreleased(key)
+    end
 end
 
 function love.update(dt)
@@ -49,9 +94,24 @@ function love.update(dt)
     accumulator = accumulator + dt
 
     while accumulator >= fixedDt do
-        player:update(fixedDt)
+        if not message.isActive then
+            player:update(fixedDt)
+        end
         shadow:update(fixedDt)
         ui:update(fixedDt) -- Update UI animations
+        message:update(fixedDt) -- Update message typing
+
+        -- Map update using xorshift16
+        seed = xorshift16(seed)
+        if seed <= 10000 then
+            local index = seed
+            local y = math.floor((index - 1) / 100) + 1 -- Row 1-100
+            local x = ((index - 1) % 100) + 1 -- Column 1-100
+            if mapArray[y] and mapArray[y][x] and mapArray[y][x][1] == 73 then
+                mapArray[y][x][1] = 74 -- Update tile from 73 to 74
+            end
+        end
+
         -- Update object animations
         for _, obj in ipairs(objects) do
             obj.animationTime = obj.animationTime + fixedDt
@@ -166,7 +226,7 @@ function love.draw()
             elseif tile == 56 then
                 grass:add(xC, yC, z, zHeight, xTileOffset, yTileOffset)
                 dirt:add(xC, yC, z, zHeight, xTileOffset, yTileOffset)
-            elseif tile == 72 or tile == 73 then
+            elseif tile == 72 or tile == 73 or tile == 74 then
                 grass:add(xC, yC, z, zHeight, xTileOffset, yTileOffset)
                 dirt:add(xC, yC, z, zHeight, xTileOffset, yTileOffset)  
                 sprites.tileBatch:add(sprites.spritesQuads[tile], xTileOffset, yTileOffset + z)
@@ -255,8 +315,13 @@ function love.draw()
     love.graphics.setShader()
     love.graphics.draw(canvas.intermediate, scaleOffsetX, scaleOffsetY, 0, scaleFactor, scaleFactor)
 
-    -- Draw inventory UI
-    ui:drawInventory(appWidth, appHeight)
+    -- Draw inventory UI if not showing message box
+    if not message.isActive then
+        ui:drawInventory(appWidth, appHeight)
+    end
+
+    -- Draw message box
+    message:draw(appWidth, appHeight)
 
     love.graphics.setColor(1, 1, 1, 1)
     love.graphics.setFont(love.graphics.newFont(12))
