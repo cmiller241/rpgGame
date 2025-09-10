@@ -17,46 +17,6 @@ function love.load()
     require("src/require")
     requireAll()
 
-    -- Initialize objects array with Bible pages
-    objects = {
-        {
-            x = 200, 
-            y = 250, 
-            animationTime = 0, 
-            message="Remember this: Whoever sows sparingly will also reap sparingly, and whoever sows generously will also reap generously. Each of you should give what you have decided in your heart to give, not reluctantly or under compulsion, for God loves a cheerful giver.", 
-            verse="2 Corinthians 9:6-7", 
-            tool=4,
-            toolMessage="You can now use a hoe. Dig up earth and plant seeds!"
-        },
-        {
-            x = 800, 
-            y = 450, 
-            animationTime = 0, 
-            message="Through thy precepts I get understanding: therefore I hate every false way. Thy Word is a lamp unto my feet and a light unto my path", 
-            verse="Psalm 119:104,105", 
-            tool=3,
-            toolMessage="You can now use a lamp. It will make your path easier at night and in caves!"
-        },
-        {
-            x = 300, 
-            y = 400, 
-            animationTime = 0, 
-            message="The Lord will guide you always; he will satisfy your needs in a sun-scorched land and will strengthen your frame. You will be like a well-watered garden, like a spring whose waters never fail.", 
-            verse="Isaiah 58:11", 
-            tool=9,
-            toolMessage="You can now use a watering can. This will allow you to water the seeds you plant in order to help them grow!"
-        },
-        {
-            x = 300, 
-            y = 650, 
-            animationTime = 0, 
-            message="For, ‘All people are like grass, and all their glory is like the flowers of the field; the grass withers and the flowers fall, but the word of the Lord endures forever.’ And this is the word that was preached to you.", 
-            verse="1 Peter 1:24-25", 
-            tool=10,
-            toolMessage="You can now plant grass!"
-        }
-    }
-
     seed = 1 -- Starting seed for xorshift16 map updates
 
     updateDimensions()
@@ -113,7 +73,7 @@ function love.update(dt)
         end
 
         -- Update object animations
-        for _, obj in ipairs(objects) do
+        for _, obj in ipairs(object.objects) do
             obj.animationTime = obj.animationTime + fixedDt
         end
         accumulator = accumulator - fixedDt
@@ -237,6 +197,14 @@ function love.draw()
             ::continueX::
         end
 
+        -- Draw objects behind the player
+        for _, obj in ipairs(object.objects) do
+            local objectRow = math.floor((obj.y) / sprites.size)
+            if objectRow == yC and obj.y <= player.y then
+                object:drawSingle(obj, cameraX, cameraY)
+            end
+        end
+
         local characterRow = math.floor(player.y / sprites.size) + 1
         if characterRow == yC then
             drawTreeBatches(cameraX, cameraY)
@@ -244,10 +212,10 @@ function love.draw()
             player:draw(cameraX, cameraY, alpha)
         end
 
-        -- Draw objects in the current row
-        for _, obj in ipairs(objects) do
-            local objectRow = math.floor((obj.y) / sprites.size) + 1
-            if objectRow == yC then
+        -- Draw objects in front of the player
+        for _, obj in ipairs(object.objects) do
+            local objectRow = math.floor((obj.y) / sprites.size)
+            if objectRow == yC and obj.y > player.y then
                 object:drawSingle(obj, cameraX, cameraY)
             end
         end

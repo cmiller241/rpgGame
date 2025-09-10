@@ -1,4 +1,45 @@
+-- objects.lua
 object = {}
+
+-- Define the objects array
+object.objects = {
+    {
+        x = 200, 
+        y = 250, 
+        animationTime = 0, 
+        message = "Remember this: Whoever sows sparingly will also reap sparingly, and whoever sows generously will also reap generously. Each of you should give what you have decided in your heart to give, not reluctantly or under compulsion, for God loves a cheerful giver.", 
+        verse = "2 Corinthians 9:6-7", 
+        tool = 4,
+        toolMessage = "You can now use a hoe. Dig up earth and plant seeds!"
+    },
+    {
+        x = 800, 
+        y = 450, 
+        animationTime = 0, 
+        message = "Through thy precepts I get understanding: therefore I hate every false way. Thy Word is a lamp unto my feet and a light unto my path", 
+        verse = "Psalm 119:104,105", 
+        tool = 3,
+        toolMessage = "You can now use a lamp. It will make your path easier at night and in caves!"
+    },
+    {
+        x = 300, 
+        y = 450, 
+        animationTime = 0, 
+        message = "The Lord will guide you always; he will satisfy your needs in a sun-scorched land and will strengthen your frame. You will be like a well-watered garden, like a spring whose waters never fail.", 
+        verse = "Isaiah 58:11", 
+        tool = 9,
+        toolMessage = "You can now use a watering can. This will allow you to water the seeds you plant in order to help them grow!"
+    },
+    {
+        x = 300, 
+        y = 650, 
+        animationTime = 0, 
+        message = "For, 'All people are like grass, and all their glory is like the flowers of the field; the grass withers and the flowers fall, but the word of the Lord endures forever.' And this is the word that was preached to you.", 
+        verse = "1 Peter 1:24-25", 
+        tool = 10,
+        toolMessage = "You can now plant grass!"
+    }
+}
 
 function object:drawSingle(obj, cameraX, cameraY)
     -- Draw shadow
@@ -61,21 +102,11 @@ function object:drawSingle(obj, cameraX, cameraY)
     end
     love.graphics.draw(sprites.objects, sprites.biblePageCenter, obj.x - 32 - cameraX, obj.y - 64 - cameraY + yOffset)
     love.graphics.setShader()
-
-    -- Draw debug circles for player and object coordinates
-    -- love.graphics.setCanvas(canvas.object)
-    -- -- Red circle for player position (player.x, player.y)
-    -- love.graphics.setColor(1, 0, 0, 1) -- Red
-    -- love.graphics.circle("fill", player.x - cameraX, player.y - cameraY, 5)
-    -- -- Yellow circle for object position (obj.x, obj.y)
-    -- love.graphics.setColor(1, 1, 0, 1) -- Yellow
-    -- love.graphics.circle("fill", obj.x - cameraX, obj.y - cameraY, 5)
-    -- love.graphics.setColor(1, 1, 1, 1) -- Reset color
 end
 
 function object:removeNearest(playerX, playerY)
     local nearestIndex, minDistance = nil, math.huge
-    for i, obj in ipairs(objects) do
+    for i, obj in ipairs(self.objects) do
         local dx = playerX - obj.x
         local dy = playerY - obj.y
         local distance = math.sqrt(dx * dx + dy * dy)
@@ -95,6 +126,6 @@ function object:removeNearest(playerX, playerY)
         end
     end
     if nearestIndex then
-        table.remove(objects, nearestIndex)
+        table.remove(self.objects, nearestIndex)
     end
 end

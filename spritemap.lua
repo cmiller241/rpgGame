@@ -2,7 +2,7 @@ local spriteMap = {
     Cody = {
         Standing = {
             Down = { frames = { { sprite = 1, duration = 0.2 }, { sprite = 1, duration = 0.2 }, { sprite = 2, duration = 0.2 }, { sprite = 3, duration = 0.2 }, { sprite = 2, duration = 0.2 } } },
-            Up = { frames = { { sprite = 16, duration = 0.2 } } },
+            Up = { frames = { { sprite = 16, duration = 0.2 }, { sprite = 16, duration = 0.2 }, { sprite = 17, duration = 0.2 }, { sprite = 18, duration = 0.2 }, { sprite = 17, duration = 0.2 } } },
             Right = { frames = { { sprite = 31, duration = 0.2 } } },
             Left = { frames = { { sprite = 31, duration = 0.2 } } }
         },

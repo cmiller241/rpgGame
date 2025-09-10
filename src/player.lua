@@ -184,7 +184,7 @@ function player:keypressed(key)
             if self:canPickUp() then
                 -- Find the nearest object and store its message
                 local nearestObj, minDistance = nil, math.huge
-                for _, obj in ipairs(objects) do
+                for _, obj in ipairs(object.objects) do
                     local dx = self.x - obj.x
                     local dy = self.y - obj.y
                     local distance = math.sqrt(dx * dx + dy * dy)
@@ -342,7 +342,7 @@ function player:canWater(tx, ty)
 end
 
 function player:canPickUp()
-    for _, obj in ipairs(objects) do
+    for _, obj in ipairs(object.objects) do
         local dx = self.x - obj.x
         local dy = self.y - obj.y
         local distance = math.sqrt(dx * dx + dy * dy)
