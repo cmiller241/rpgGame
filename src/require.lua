@@ -16,6 +16,7 @@ function requireAll()
     require("src/sprites")  -- Loads and organizes all sprite images and quads (e.g., hero, grass, trees, etc.)
     require("src/mountain") -- Mountain object and related functions (e.g., drawing mountain tiles, handling elevation)
     require("src/tree")     -- Tree object and related functions (e.g., drawing tree tiles, handling elevation)
+    require("src/crop")
     require("src/grass")    -- Grass object and related functions (e.g., drawing grass tiles, handling elevation)
     require("src/tallgrass") -- Tall grass object and related functions
     require("src/dirt")     -- Dirt object and related functions (e.g., drawing plowed dirt tiles)

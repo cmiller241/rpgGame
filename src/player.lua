@@ -36,8 +36,8 @@ player.isNearOutlinedObject = false
 -- Tool animation tracking
 player.animations = {
     Plowing = { time = 0, done = false, tileType = 56, frameTrigger = 4, canFunc = "canPlow" },
-    Sowing  = { time = 0, done = false, tileType = 72, frameTrigger = -1, canFunc = "canSow" },
-    Watering = { time = 0, done = false, tileType = 73, frameTrigger = 3, canFunc = "canWater" },
+    Sowing  = { time = 0, done = false, tileType = 73, frameTrigger = -1, canFunc = "canSow" },
+    Watering = { time = 0, done = false, tileType = 72, frameTrigger = 3, canFunc = "canWater" },
     PickUp = { time = 0, done = false, frameTrigger = 3, canFunc = "canPickUp" }
 }
 
@@ -336,7 +336,7 @@ end
 function player:canWater(tx, ty)
     if mapArray[ty] and mapArray[ty][tx] then
         local tile = mapArray[ty][tx]
-        return tile[1] == 72 and tile[2] == self.z
+        return tile[1] == 73 and tile[2] == self.z
     end
     return false
 end

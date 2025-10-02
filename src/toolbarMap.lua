@@ -16,7 +16,7 @@ local toolbarMap = {
         { quad = 13, name = "Potato Seed" },
         { quad = 14, name = "Carrot Seed" },
     },
-    visibleSlots = {1, 1, 1, 1, 1, 1, 1, 1, 1, 1} -- All empty slots initially
+    visibleSlots = {4, 9, 10, 1, 1, 1, 1, 1, 1, 1} -- All empty slots initially
 }
 
 return toolbarMap

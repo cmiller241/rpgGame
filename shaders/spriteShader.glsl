@@ -21,8 +21,8 @@ vec2 computeSpriteOrigin(vec2 texture_coords, vec2 screen_coords) {
     // Normalize texture_coords (0 to 1)
     vec2 normalizedTexture = texture_coords;
     // Pivot offset
-    float ox = 224.0;
-    float oy = 224.0;
+    float ox = 0;   //224?!
+    float oy = 0;
     // Compute the pixel offset within the sprite, accounting for pivot
     vec2 pixelOffset = vec2(normalizedTexture.x * spriteWidth - ox, normalizedTexture.y * spriteHeight - oy);
     // Subtract the offset from screen_coords to get the sprite's origin (xTileWidthOffsetX, yTileHeightOffsetY)

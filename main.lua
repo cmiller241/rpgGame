@@ -67,8 +67,8 @@ function love.update(dt)
             local index = seed
             local y = math.floor((index - 1) / 100) + 1 -- Row 1-100
             local x = ((index - 1) % 100) + 1 -- Column 1-100
-            if mapArray[y] and mapArray[y][x] and mapArray[y][x][1] == 73 then
-                mapArray[y][x][1] = 74 -- Update tile from 73 to 74
+            if mapArray[y] and mapArray[y][x] and mapArray[y][x][1] == 72 then
+                mapArray[y][x][1] = 74 -- Update tile from 72 to 74
             end
         end
 
@@ -110,46 +110,13 @@ function love.update(dt)
     player.isNearOutlinedObject = false
 end
 
-function drawTreeBatches(cameraX, cameraY)
-    if sprites.treeBatch:getCount() > 0 then
-        love.graphics.setCanvas(canvas.object)
-        love.graphics.draw(sprites.treeBatch)
-        sprites.treeBatch:clear()
-    end
-    if shadow.frame == shadow.frequency and sprites.treeShadowBatch:getCount() > 0 then
-        love.graphics.setCanvas(canvas.shadow)
-        love.graphics.setShader(shader.sprite)
-        love.graphics.setBlendMode('lighten', 'premultiplied')
-        shader.sprite:send("divideBy", 2)
-        shader.sprite:send("angle", shadow.angle)
-        shader.sprite:send("colorMapCanvas", canvas.colorMap)
-        shader.sprite:send("spriteHeight", 480.0)
-        shader.sprite:send("spriteWidth", 1440.0)
-        shader.sprite:send("spriteBase", 250)
-        shader.sprite:send("xstart", 100)
-        shader.sprite:send("xend", 320)
-        shader.sprite:send("shadowSize", 250)
-        shader.sprite:send("opacity", 1.0)
-        shader.sprite:send("canvasSize", {800, 600})
-        shader.sprite:send("spotlight", {player.x + 8 - cameraX, player.y - cameraY + player.z / 2})
-        if (shadow.angle % 360 > 180 and shadow.angle % 360 < 360) then
-            shader.sprite:send("noSunShadows", 1.0)
-        else
-            shader.sprite:send("noSunShadows", 0.0)
-        end
-        shader.sprite:send("showSpotlight", 1)
-        love.graphics.draw(sprites.treeShadowBatch)
-        love.graphics.setBlendMode('alpha')
-        love.graphics.setShader()
-        sprites.treeShadowBatch:clear()
-    end
-end
-
 function love.draw()
     canvas.clear()
     sprites.tileBatch:clear()
     sprites.treeBatch:clear()
     sprites.treeShadowBatch:clear()
+    sprites.cropBatch:clear()
+    sprites.cropShadowBatch:clear()
     love.graphics.setCanvas(canvas.shadow)
     love.graphics.clear(0,0,0,0)
 
@@ -176,6 +143,7 @@ function love.draw()
             if tile == 1 then
                 if z ~= 0 then
                     drawTreeBatches(cameraX, cameraY)
+                    drawCropBatches(cameraX, cameraY)
                     mountain:add(xC, yC, z, zHeight, xTileOffset, yTileOffset)
                 end
                 grass:add(xC, yC, z, zHeight, xTileOffset, yTileOffset)
@@ -188,8 +156,8 @@ function love.draw()
                 dirt:add(xC, yC, z, zHeight, xTileOffset, yTileOffset)
             elseif tile == 72 or tile == 73 or tile == 74 then
                 grass:add(xC, yC, z, zHeight, xTileOffset, yTileOffset)
-                dirt:add(xC, yC, z, zHeight, xTileOffset, yTileOffset)  
-                sprites.tileBatch:add(sprites.spritesQuads[tile], xTileOffset, yTileOffset + z)
+                dirt:add(xC, yC, z, zHeight, xTileOffset, yTileOffset)
+                crop:add(xC, yC, z, zHeight, xTileOffset, yTileOffset, cameraX, cameraY, 78)
             elseif tile == 512 then
                 grass:add(xC, yC, z, zHeight, xTileOffset, yTileOffset)
                 tree:add(xC, yC, z, zHeight, xTileOffset, yTileOffset, cameraX, cameraY)
@@ -205,9 +173,11 @@ function love.draw()
             end
         end
 
+        -- Draw player
         local characterRow = math.floor(player.y / sprites.size) + 1
         if characterRow == yC then
             drawTreeBatches(cameraX, cameraY)
+            drawCropBatches(cameraX, cameraY)
             love.graphics.setCanvas(canvas.object)
             player:draw(cameraX, cameraY, alpha)
         end
@@ -223,6 +193,7 @@ function love.draw()
     end
 
     drawTreeBatches(cameraX, cameraY)
+    drawCropBatches(cameraX, cameraY)
 
     local lutNew = 96
     local lutOld = 0
@@ -311,4 +282,74 @@ function updateDimensions()
     scaleOffsetX = (appWidth - (window.width * scaleFactor)) / 2
     scaleOffsetY = (appHeight - (window.height * scaleFactor)) / 2
     shadow.frame = 0
+end
+
+function drawTreeBatches(cameraX, cameraY)
+    if sprites.treeBatch:getCount() > 0 then
+        love.graphics.setCanvas(canvas.object)
+        love.graphics.draw(sprites.treeBatch)
+        sprites.treeBatch:clear()
+    end
+    if shadow.frame == shadow.frequency and sprites.treeShadowBatch:getCount() > 0 then
+        love.graphics.setCanvas(canvas.shadow)
+        love.graphics.setShader(shader.sprite)
+        love.graphics.setBlendMode('lighten', 'premultiplied')
+        shader.sprite:send("divideBy", 2)
+        shader.sprite:send("angle", shadow.angle)
+        shader.sprite:send("colorMapCanvas", canvas.colorMap)
+        shader.sprite:send("spriteHeight", 480.0)   --SpriteMap Height
+        shader.sprite:send("spriteWidth", 1440.0)   --SpriteMap Width
+        shader.sprite:send("spriteBase", 250)
+        shader.sprite:send("xstart", 100)
+        shader.sprite:send("xend", 320)
+        shader.sprite:send("shadowSize", 250)
+        shader.sprite:send("opacity", 1.0)
+        shader.sprite:send("canvasSize", {800, 600})
+        shader.sprite:send("spotlight", {player.x + 8 - cameraX, player.y - cameraY + player.z / 2})
+        if (shadow.angle % 360 > 180 and shadow.angle % 360 < 360) then
+            shader.sprite:send("noSunShadows", 1.0)
+        else
+            shader.sprite:send("noSunShadows", 0.0)
+        end
+        shader.sprite:send("showSpotlight", 1)
+        love.graphics.draw(sprites.treeShadowBatch)
+        love.graphics.setBlendMode('alpha')
+        love.graphics.setShader()
+        sprites.treeShadowBatch:clear()
+    end
+end
+
+function drawCropBatches(cameraX, cameraY)
+    -- if sprites.cropBatch:getCount() > 0 then
+    --     love.graphics.setCanvas(canvas.object)
+    --     love.graphics.draw(sprites.cropBatch)
+    --     sprites.cropBatch:clear()
+    -- end
+    if shadow.frame == shadow.frequency and sprites.cropShadowBatch:getCount() > 0 then
+        love.graphics.setCanvas(canvas.object)
+        love.graphics.setShader(shader.spriteTest)
+        love.graphics.setBlendMode('lighten', 'premultiplied')
+        -- shader.sprite:send("divideBy", 1)
+        -- shader.sprite:send("angle", shadow.angle)
+        -- shader.sprite:send("colorMapCanvas", canvas.colorMap)
+        -- shader.sprite:send("spriteHeight", 352.0) -- Adjust based on your crop sprite height
+        -- shader.sprite:send("spriteWidth", 640.0) -- Adjust based on your crop sprite width
+        -- shader.sprite:send("spriteBase", 240.0) -- Adjust base for shadow projection
+        -- shader.sprite:send("xstart", 5)
+        -- shader.sprite:send("xend", 27)
+        -- shader.sprite:send("shadowSize", 200) -- Adjust shadow length
+        -- shader.sprite:send("opacity", 1.0)
+        -- shader.sprite:send("canvasSize", {800, 600})
+        -- shader.sprite:send("spotlight", {player.x + 8 - cameraX, player.y - cameraY + player.z / 2})
+        -- if (shadow.angle % 360 > 180 and shadow.angle % 360 < 360) then
+        --     shader.sprite:send("noSunShadows", 1.0)
+        -- else
+        --     shader.sprite:send("noSunShadows", 0.0)
+        -- end
+        -- shader.sprite:send("showSpotlight", 1)
+        love.graphics.draw(sprites.cropShadowBatch)
+        love.graphics.setBlendMode('alpha')
+        love.graphics.setShader()
+        sprites.cropShadowBatch:clear()
+    end
 end
