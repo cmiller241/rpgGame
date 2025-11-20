@@ -61,14 +61,20 @@ function love.update(dt)
         ui:update(fixedDt) -- Update UI animations
         message:update(fixedDt) -- Update message typing
 
-        -- Map update using xorshift16
-        seed = xorshift16(seed)
-        if seed <= 10000 then
-            local index = seed
-            local y = math.floor((index - 1) / 100) + 1 -- Row 1-100
-            local x = ((index - 1) % 100) + 1 -- Column 1-100
-            if mapArray[y] and mapArray[y][x] and mapArray[y][x][1] == 72 then
-                mapArray[y][x][1] = 74 -- Update tile from 72 to 74
+        for i = 1, 20 do
+            -- Map update using xorshift16 (grow watered crop stages 1-7 to next dry stage)
+            seed = xorshift16(seed)
+            if seed <= 10000 then
+                local index = seed
+                local y = math.floor((index - 1) / 100) + 1 -- Row 1-100
+                local x = ((index - 1) % 100) + 1 -- Column 1-100
+                local tileData = mapArray[y] and mapArray[y][x]
+                if tileData then
+                    local t = tileData[1]
+                    if t >= 73 and t <= 85 and t % 2 == 1 then
+                        tileData[1] = t + 1
+                    end
+                end
             end
         end
 
@@ -154,10 +160,15 @@ function love.draw()
             elseif tile == 56 then
                 grass:add(xC, yC, z, zHeight, xTileOffset, yTileOffset)
                 dirt:add(xC, yC, z, zHeight, xTileOffset, yTileOffset)
-            elseif tile == 72 or tile == 73 or tile == 74 then
+            elseif tile >= 72 and tile <= 87 then
                 grass:add(xC, yC, z, zHeight, xTileOffset, yTileOffset)
                 dirt:add(xC, yC, z, zHeight, xTileOffset, yTileOffset)
-                crop:add(xC, yC, z, zHeight, xTileOffset, yTileOffset, cameraX, cameraY, 78)
+                if tile % 2 == 1 then
+                    -- Water layer for wet (odd) stages
+                    crop:add(xC, yC, z, zHeight, xTileOffset, yTileOffset, cameraX, cameraY, 70)
+                end
+                -- Crop/plant layer
+                crop:add(xC, yC, z, zHeight, xTileOffset, yTileOffset, cameraX, cameraY, tile)            
             elseif tile == 512 then
                 grass:add(xC, yC, z, zHeight, xTileOffset, yTileOffset)
                 tree:add(xC, yC, z, zHeight, xTileOffset, yTileOffset, cameraX, cameraY)
@@ -320,15 +331,18 @@ function drawTreeBatches(cameraX, cameraY)
 end
 
 function drawCropBatches(cameraX, cameraY)
-    -- if sprites.cropBatch:getCount() > 0 then
-    --     love.graphics.setCanvas(canvas.object)
-    --     love.graphics.draw(sprites.cropBatch)
-    --     sprites.cropBatch:clear()
-    -- end
-    if shadow.frame == shadow.frequency and sprites.cropShadowBatch:getCount() > 0 then
+    if sprites.cropBatch:getCount() > 0 then
         love.graphics.setCanvas(canvas.object)
+        love.graphics.draw(sprites.cropBatch)
+        sprites.cropBatch:clear()
+    end
+    if shadow.frame == shadow.frequency and sprites.cropShadowBatch:getCount() > 0 then
+        love.graphics.setCanvas(canvas.shadow)
         love.graphics.setShader(shader.spriteTest)
         love.graphics.setBlendMode('lighten', 'premultiplied')
+
+        shader.spriteTest:send("angle", shadow.angle)
+        
         -- shader.sprite:send("divideBy", 1)
         -- shader.sprite:send("angle", shadow.angle)
         -- shader.sprite:send("colorMapCanvas", canvas.colorMap)
@@ -347,6 +361,7 @@ function drawCropBatches(cameraX, cameraY)
         --     shader.sprite:send("noSunShadows", 0.0)
         -- end
         -- shader.sprite:send("showSpotlight", 1)
+        
         love.graphics.draw(sprites.cropShadowBatch)
         love.graphics.setBlendMode('alpha')
         love.graphics.setShader()

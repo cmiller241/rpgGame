@@ -36,8 +36,8 @@ player.isNearOutlinedObject = false
 -- Tool animation tracking
 player.animations = {
     Plowing = { time = 0, done = false, tileType = 56, frameTrigger = 4, canFunc = "canPlow" },
-    Sowing  = { time = 0, done = false, tileType = 73, frameTrigger = -1, canFunc = "canSow" },
-    Watering = { time = 0, done = false, tileType = 72, frameTrigger = 3, canFunc = "canWater" },
+    Sowing  = { time = 0, done = false, tileType = 72, frameTrigger = -1, canFunc = "canSow" },
+    Watering = { time = 0, done = false, tileType = 73, frameTrigger = 3, canFunc = "canWater" },
     PickUp = { time = 0, done = false, frameTrigger = 3, canFunc = "canPickUp" }
 }
 
@@ -62,7 +62,13 @@ function player:handleToolAnimation(state, frame, numFrames)
         if state ~= "PickUp" then
             local tx, ty = self:getTargetTile()
             if self[anim.canFunc](self, tx, ty) then
-                mapArray[ty][tx][1] = anim.tileType
+                if state == "Watering" then
+                    -- Watering advances dry (even) tile to wet (odd)
+                    mapArray[ty][tx][1] = mapArray[ty][tx][1] + 1
+                else
+                    -- Plowing/Sowing use fixed tileType
+                    mapArray[ty][tx][1] = anim.tileType
+                end
                 anim.done = true
             end
         else
@@ -335,8 +341,8 @@ end
 
 function player:canWater(tx, ty)
     if mapArray[ty] and mapArray[ty][tx] then
-        local tile = mapArray[ty][tx]
-        return tile[1] == 73 and tile[2] == self.z
+        local tile = mapArray[ty][tx][1]
+        return (tile >= 72 and tile <= 86 and tile % 2 == 0) and mapArray[ty][tx][2] == self.z
     end
     return false
 end
