@@ -3,8 +3,8 @@ local spriteMap = {
         Standing = {
             Down = { frames = { { sprite = 1, duration = 0.2 }, { sprite = 1, duration = 0.2 }, { sprite = 2, duration = 0.2 }, { sprite = 3, duration = 0.2 }, { sprite = 2, duration = 0.2 } } },
             Up = { frames = { { sprite = 16, duration = 0.2 }, { sprite = 16, duration = 0.2 }, { sprite = 17, duration = 0.2 }, { sprite = 18, duration = 0.2 }, { sprite = 17, duration = 0.2 } } },
-            Right = { frames = { { sprite = 31, duration = 0.2 } } },
-            Left = { frames = { { sprite = 31, duration = 0.2 } } }
+            Right = { frames = { { sprite = 31, duration = 0.2 }, { sprite = 31, duration = 0.2 }, { sprite = 32, duration = 0.2 }, { sprite = 33, duration = 0.2 }, { sprite = 32, duration = 0.2 } } },
+            Left = { frames = { { sprite = 31, duration = 0.2 }, { sprite = 31, duration = 0.2 }, { sprite = 32, duration = 0.2 }, { sprite = 33, duration = 0.2 }, { sprite = 32, duration = 0.2 } } }
         },
         Walking = {
             Down = { frames = { { sprite = 5, duration = 0.2 }, { sprite = 6, duration = 0.2 }, { sprite = 7, duration = 0.2 }, { sprite = 8, duration = 0.2 }, { sprite = 9, duration = 0.2 }, { sprite = 10, duration = 0.2 } } },
