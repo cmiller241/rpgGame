@@ -2,7 +2,11 @@
 --
 -- Grass top tiles and the little decorative "flourishes" scattered on them.
 
-grass = {}
+local grass = {}
+package.loaded[...] = grass  -- register now, so modules that require each other share this table
+
+local mapArray = require("maps.map01")
+local sprites = require("src.sprites")
 
 -- Adds the grass top for one tile to the tile batch, lifted by its height.
 --
@@ -40,3 +44,5 @@ end
 function grass:addFlourish(xC, yC, z, screenX, screenY)
     sprites.tileBatch:add(sprites.spritesQuads[flourishes[yC][xC]], screenX, screenY + z)
 end
+
+return grass

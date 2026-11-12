@@ -19,7 +19,13 @@
 -- Canvases are only rebuilt when the game view size actually changes: at
 -- the start and end of a zoom, or when the window is resized.
 
-view = {}
+local view = {}
+package.loaded[...] = view  -- register now, so modules that require each other share this table
+
+local camera = require("src.camera")
+local canvas = require("src.canvas")
+local shader = require("src.shader")
+local window = require("src.window")
 
 view.zoom         = 2       -- target zoom level (whole number)
 view.displayZoom  = 2       -- zoom currently on screen (in between while gliding)
@@ -57,6 +63,10 @@ function view:apply(appW, appH)
     local renderZoom = math.max(self.minZoom, math.floor(math.min(self.displayZoom, self.zoom) + 1e-6))
     local w, h = self:sizeFor(renderZoom, appW, appH)
     if w ~= window.width or h ~= window.height then
+        -- Keep the same world point in the middle of the screen, so the
+        -- camera doesn't drift when the view size jumps.
+        camera.x = camera.x + (window.width - w) / 2
+        camera.y = camera.y + (window.height - h) / 2
         window.width, window.height = w, h
         canvas:initialize(w, h)
     end
@@ -108,3 +118,5 @@ function view:present(appW, appH)
     love.graphics.draw(canvas.intermediate, x, y, 0, s, s)
     love.graphics.setShader()
 end
+
+return view

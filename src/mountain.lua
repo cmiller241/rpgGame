@@ -22,7 +22,11 @@
 --
 -- Quad 45 is a dark gradient stretched over the whole face for depth.
 
-mountain = {}
+local mountain = {}
+package.loaded[...] = mountain  -- register now, so modules that require each other share this table
+
+local sprites = require("src.sprites")
+local terrain = require("src.terrain")
 
 local FACE_SINGLE, FACE_BOTTOM, FACE_MIDDLE, FACE_TOP = 23, 27, 31, 35
 local FACE_GRADIENT = 45
@@ -70,3 +74,5 @@ function mountain:footprint(z, screenX, screenY)
     local ts = sprites.size
     return screenX, screenY + z, ts, ts - z
 end
+
+return mountain

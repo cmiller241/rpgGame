@@ -6,14 +6,17 @@
 -- shadows) get shaders/terrainCommon.glsl pasted in front of their own
 -- source, since GLSL in LÖVE has no #include.
 
-shader = {}
+local shader = {}
+package.loaded[...] = shader  -- register now, so modules that require each other share this table
 
 local terrainCommon = love.filesystem.read("shaders/terrainCommon.glsl")
 
 local function load(path, needsTerrain)
     local source = love.filesystem.read(path)
     if needsTerrain then
-        source = terrainCommon .. "\n" .. source
+        -- Pixel stage only: it samples textures and is never needed by a
+        -- vertex stage (spriteShadowShader.glsl has one).
+        source = "#ifdef PIXEL\n" .. terrainCommon .. "\n#endif\n" .. source
     end
     return love.graphics.newShader(source)
 end
@@ -34,3 +37,5 @@ function shader.sendIfPresent(s, name, ...)
         s:send(name, ...)
     end
 end
+
+return shader

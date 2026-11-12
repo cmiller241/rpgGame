@@ -4,7 +4,16 @@
 -- pass that turns the ground, sprite and shadow canvases into the finished
 -- frame. The heavy lifting is in shaders/ultimateShader.glsl.
 
-lighting = {}
+local lighting = {}
+package.loaded[...] = lighting  -- register now, so modules that require each other share this table
+
+local canvas = require("src.canvas")
+local player = require("src.player")
+local shader = require("src.shader")
+local spriteShadow = require("src.spriteShadow")
+local sprites = require("src.sprites")
+local sun = require("src.sun")
+local terrain = require("src.terrain")
 
 lighting.lampRadius = 100     -- px, how far the player's lamp reaches
 lighting.lampHeight = 24      -- px above the player's feet (roughly hand height)
@@ -20,22 +29,26 @@ function lighting:begin()
     -- The lamp sits at the player's feet position on the ground plane, raised
     -- to hand height. player.z is negative-up, so -player.z is the height.
     local lamp = self.lamp
-    lamp.x = player.x + 16
-    lamp.y = player.y - 4
-    lamp.z = -player.z + self.lampHeight
+    lamp.x = player.drawX + 16
+    lamp.y = player.drawY - 4
+    lamp.z = -player.drawZ + self.lampHeight
     lamp.radius = self.lampRadius
 end
 
--- Brightness multiplier for a sprite whose middle is at world (wx, wy) and
--- height h: the same lit/shadow level the shader gives the ground, so sprites
--- darken in a cliff's shadow and fade into dusk along with everything else.
--- Use with love.graphics.setColor.
-function lighting:objectTint(wx, wy, h)
+-- Brightness multiplier for a sprite sampled at world (wx, wy), height h:
+-- the same lit/shadow level the shader gives the ground, so sprites darken
+-- in a cliff's shadow or another sprite's shadow (e.g. under a tree) and
+-- fade into dusk along with everything else. `ownCaster` is the sprite's own
+-- shadow caster, so it doesn't shadow itself. Use with love.graphics.setColor.
+function lighting:objectTint(wx, wy, h, ownCaster)
     local sunState = self.sun
     if sunState.litLevel <= sunState.shadowLevel then
         return sunState.litLevel                 -- no direct sun to block
     end
     local shade = terrain:sunShadowAmount(wx, wy, h, sunState)
+    if shade < 1 then
+        shade = math.max(shade, spriteShadow:sunShadowAt(wx, wy, h, ownCaster, sunState))
+    end
     return sunState.litLevel + (sunState.shadowLevel - sunState.litLevel) * shade
 end
 
@@ -71,3 +84,5 @@ function lighting:composite(cameraX, cameraY)
     love.graphics.draw(canvas.offscreen, 0, 0)
     love.graphics.setShader()
 end
+
+return lighting

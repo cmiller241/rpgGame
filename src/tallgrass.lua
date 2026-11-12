@@ -1,4 +1,11 @@
-tallGrass = {}
+local tallGrass = {}
+package.loaded[...] = tallGrass  -- register now, so modules that require each other share this table
+
+local canvas = require("src.canvas")
+local player = require("src.player")
+local shader = require("src.shader")
+local sprites = require("src.sprites")
+local window = require("src.window")
 
 function tallGrass:add(xC, yC, z, zHeight, xTileWidthOffsetX, yTileHeightOffsetY, cameraX, cameraY)
     love.graphics.setCanvas(canvas.object)
@@ -48,3 +55,5 @@ function tallGrass:add(xC, yC, z, zHeight, xTileWidthOffsetX, yTileHeightOffsetY
 
     love.graphics.setShader()
 end
+
+return tallGrass

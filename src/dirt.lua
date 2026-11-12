@@ -2,16 +2,22 @@
 --
 -- Plowed dirt tiles (tile type 56 and the crop tiles 72-87 sitting on dirt).
 
-dirt = {}
+local dirt = {}
+package.loaded[...] = dirt  -- register now, so modules that require each other share this table
+
+local mapArray = require("maps.map01")
+local sprites = require("src.sprites")
+local tiles = require("src.tiles")
 
 -- Adds a dirt tile to the tile batch. The sprite (quads 56-71) is picked by
 -- which neighbours are also dirt, so patches join up seamlessly:
 --     +1 up   +2 left   +4 right   +8 down
 function dirt:add(xC, yC, z, screenX, screenY)
     local tile = 56
+    -- (Previously "type >= 56", which also counted trees as dirt.)
     local function isDirt(x, y)
         local cell = mapArray[y] and mapArray[y][x]
-        return cell ~= nil and cell[1] >= 56
+        return cell ~= nil and tiles.isDirt(cell[1])
     end
 
     if isDirt(xC, yC - 1) then tile = tile + 1 end
@@ -21,3 +27,5 @@ function dirt:add(xC, yC, z, screenX, screenY)
 
     sprites.tileBatch:add(sprites.spritesQuads[tile], screenX, screenY + z)
 end
+
+return dirt

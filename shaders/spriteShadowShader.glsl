@@ -1,9 +1,13 @@
-// spriteShadowShader.glsl  —  shadows cast by sprites (trees, crops, player)
+// spriteShadowShader.glsl  —  shadows cast by sprites (trees, crops, pages, player)
 //
 // (terrainCommon.glsl is prepended to this file by src/shader.lua.)
 //
-// Drawn by spriteShadow:flush() as a plain screen-space rectangle covering
-// everywhere this sprite's shadow could land. Output goes to canvas.shadow:
+// spriteShadow:flush() draws one screen-space rectangle per caster, covering
+// everywhere that caster's shadow could land. Casters on the same sprite sheet
+// share a single draw call: each rectangle's vertices carry that caster's
+// details as extra attributes, passed through to the pixel stage below.
+//
+// Output goes to canvas.shadow:
 //     R = in this sprite's sun shadow (value = opacity)
 //     G = in this sprite's lamp shadow
 // using 'lighten' blending, so overlapping shadows combine with max().
@@ -15,7 +19,7 @@
 //   1. Rebuild the 3D world point p of the terrain visible there (this works
 //      for cliff faces too, so shadows climb up walls correctly).
 //   2. Fire a ray from p toward the light. Where the ray crosses the base
-//      line's vertical plane (world y = casterBase.y) we know exactly
+//      line's vertical plane (world y = base.y) we know exactly
 //      (a) the x position along the sprite and (b) how high above the
 //      feet the ray is at that point.
 //   3. Those two numbers are a pixel position in the sprite. If that sprite
@@ -25,14 +29,30 @@
 // west), never spreading out below the feet.
 // No loops: one silhouette read for hard edges, nine for soft ones.
 
-uniform Image casterImage;       // image (or canvas) holding the sprite
+// Per-caster data, constant across each rectangle.
+varying vec4 vQuad;          // sprite's rectangle within the image: x, y, w, h (px)
+varying vec4 vAnchorLift;    // anchor x, anchor y (px in quad), lift (px), sun opacity
+varying vec4 vBase;          // world x, y, height of the anchor; castLamp (0/1)
+varying vec2 vSway;          // wind: px shift at the sprite's top, bend start (fraction down)
+
+#ifdef VERTEX
+attribute vec4 CasterQuad;
+attribute vec4 CasterAnchorLift;
+attribute vec4 CasterBase;
+attribute vec2 CasterSway;
+
+vec4 position(mat4 transform_projection, vec4 vertex_position) {
+    vQuad = CasterQuad;
+    vAnchorLift = CasterAnchorLift;
+    vBase = CasterBase;
+    vSway = CasterSway;
+    return transform_projection * vertex_position;
+}
+#endif
+
+#ifdef PIXEL
+uniform Image casterImage;       // sprite sheet (or canvas) for this draw call
 uniform vec2  casterImageSize;   // its size in px
-uniform vec4  casterQuad;        // sprite's rectangle within the image: x, y, w, h (px)
-uniform vec2  casterAnchor;      // px inside the quad where the sprite touches the ground
-uniform vec3  casterBase;        // world x, y, height of that ground contact point
-uniform float casterLift;        // px the sprite is raised off the ground (jumping)
-uniform float casterOpacity;     // sun shadow strength for this sprite (0..1)
-uniform float castLampShadow;    // 1 = also block the player's lamp
 
 uniform float sunUp;
 uniform vec2  sunDir;
@@ -41,9 +61,13 @@ uniform vec3  lampPos;
 uniform float lampRadius;
 
 // 1 if sprite pixel `px` (relative to the quad) is opaque, else 0.
+// Applies the same wind bend as windSwayShader.glsl so the shadow sways
+// with the canopy.
 float silhouette(vec2 px) {
-    if (px.x < 0.0 || px.y < 0.0 || px.x >= casterQuad.z || px.y >= casterQuad.w) return 0.0;
-    vec2 texUV = (casterQuad.xy + floor(px) + 0.5) / casterImageSize;
+    float bend = clamp((vSway.y - px.y / vQuad.w) / vSway.y, 0.0, 1.0);
+    px.x -= vSway.x * bend * bend;
+    if (px.x < 0.0 || px.y < 0.0 || px.x >= vQuad.z || px.y >= vQuad.w) return 0.0;
+    vec2 texUV = (vQuad.xy + floor(px) + 0.5) / casterImageSize;
     return step(0.5, Texel(casterImage, texUV).a);
 }
 
@@ -59,13 +83,13 @@ float hitsBillboard(vec3 p, vec2 dir, float slope, float maxT, float softness) {
     if (abs(dir.y) < 0.001) return 0.0;
 
     // Distance along the ray until it reaches the base line's plane.
-    float t = (casterBase.y - p.y) / dir.y;
+    float t = (vBase.y - p.y) / dir.y;
     if (t <= 0.0 || t >= maxT) return 0.0;      // plane is behind us / past the light
 
-    float lateral = p.x + dir.x * t - casterBase.x;     // x offset from the feet along the base line
-    float heightAbove = p.z + t * slope - casterBase.z - casterLift;
+    float lateral = p.x + dir.x * t - vBase.x;          // x offset from the feet along the base line
+    float heightAbove = p.z + t * slope - vBase.z - vAnchorLift.z;
 
-    vec2 px = casterAnchor + vec2(lateral, -heightAbove);
+    vec2 px = vAnchorLift.xy + vec2(lateral, -heightAbove);
 
     float r = t * softness;                     // blur radius in sprite pixels
     if (r < 0.5) return silhouette(px);         // too close to blur: hard edge
@@ -86,11 +110,11 @@ vec4 effect(vec4 color, Image texture, vec2 uv, vec2 screenPx) {
 
     float sunShadow = 0.0;
     if (sunUp > 0.5) {
-        sunShadow = hitsBillboard(p, sunDir, sunSlope, 1.0e6, sunSoftness) * casterOpacity;
+        sunShadow = hitsBillboard(p, sunDir, sunSlope, 1.0e6, sunSoftness) * vAnchorLift.w;
     }
 
     float lampShadow = 0.0;
-    if (castLampShadow > 0.5) {
+    if (vBase.w > 0.5) {
         vec2 toLamp = lampPos.xy - p.xy;
         float dist = length(toLamp);
         if (dist > 0.5 && dist < lampRadius) {
@@ -102,3 +126,4 @@ vec4 effect(vec4 color, Image texture, vec2 uv, vec2 screenPx) {
     // Premultiplied output for the 'lighten' blend.
     return vec4(sunShadow, lampShadow, 0.0, max(sunShadow, lampShadow));
 }
+#endif

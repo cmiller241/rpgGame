@@ -44,7 +44,12 @@
 --    single call with the camera offset, so it costs about the same as
 --    drawing one sprite.
 
-terrain = {}
+local terrain = {}
+package.loaded[...] = terrain  -- register now, so modules that require each other share this table
+
+local canvas = require("src.canvas")
+local shader = require("src.shader")
+local window = require("src.window")
 
 terrain.tileSize    = 32
 terrain.heightRange = 1024   -- surface map stores height / heightRange (keeps values in 0..1)
@@ -200,3 +205,5 @@ function terrain:sunShadowAmount(wx, wy, h, sunState)
     end
     return 1 - lit
 end
+
+return terrain

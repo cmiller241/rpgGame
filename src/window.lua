@@ -7,7 +7,10 @@
 -- the real window size (e.g. a 1280x800 window at 2x zoom = 640x400) and
 -- rebuilds the canvases whenever they change.
 
-window = {}
+local window = {}
+package.loaded[...] = window  -- register now, so modules that require each other share this table
 
 window.width = 800
 window.height = 600
+
+return window

@@ -2,34 +2,68 @@
 --
 -- FRAME OVERVIEW (love.draw)
 --   1. Surface map   terrain:drawSurfaceMap - per-pixel terrain shape for lighting
---   2. Scene         walk the visible tiles row by row (back to front):
+--   2. Collect       walk the visible tiles row by row (back to front):
 --                      * ground/cliff tile sprites -> sprites.tileBatch
---                      * cliffs hide sprites behind them on canvas.object
---                      * sprites (trees, crops, player) -> canvas.object,
---                        each queuing its shadow
+--                      * sprites (trees, crops, pages, player) become draw
+--                        items, each queuing its shadow caster
 --   3. Shadows       spriteShadow:flush - all sprite shadows -> canvas.shadow
---   4. Ground        tileBatch -> canvas.offscreen (one draw call)
---   5. Lighting      lighting:composite - shadows, cliff lighting, lamp, LUT
---   6. Present       view:present - scale canvas.intermediate to the window, draw UI
+--   4. Draw sprites  row by row: cliffs hide what's behind them, then the
+--                    row's sprites are drawn, tinted if they stand in a cliff's
+--                    or another sprite's shadow (needs every caster, hence
+--                    collecting first)
+--   5. Ground        tileBatch -> canvas.offscreen (one draw call)
+--   6. Lighting      lighting:composite - shadows, cliff lighting, lamp, LUT
+--   7. Present       view:present - scale to the window, then the UI
+--
+-- Run with `--shots` or `--bench` for developer tools (see src/devtools.lua).
+--
+-- MODULES
+-- Every file in src/ is a module: it builds a local table, registers it in
+-- package.loaded straight away, requires what it needs, and returns the
+-- table. Registering first means two modules that need each other (e.g.
+-- player and message) get the same table instead of looping forever, as long
+-- as neither uses the other while it's still loading.
+
+-- Pixel art: images must be loaded with nearest-neighbour filtering, so set
+-- the default before any module loads an image.
+love.graphics.setDefaultFilter("nearest", "nearest")
+
+local mapArray     = require("maps.map01")
+local xorshift16   = require("src.xorshift")
+local window       = require("src.window")
+local canvas       = require("src.canvas")
+local view         = require("src.view")
+local camera       = require("src.camera")
+local shader       = require("src.shader")
+local sun          = require("src.sun")
+local sprites      = require("src.sprites")
+local terrain      = require("src.terrain")
+local spriteShadow = require("src.spriteShadow")
+local lighting     = require("src.lighting")
+local tiles        = require("src.tiles")
+local mountain     = require("src.mountain")
+local grass        = require("src.grass")
+local dirt         = require("src.dirt")
+local player       = require("src.player")
+local object       = require("src.objects")
+local ui           = require("src.ui")
+local message      = require("src.message")
+local devtools     = require("src.devtools")
 
 local appWidth, appHeight
 local accumulator = 0 -- For fixed time-step
-local alpha = 0 -- For interpolation
-local seed -- Pseudorandom seed for map updates
+local alpha = 0       -- How far into the next update tick we are (0..1), for smooth drawing
+local seed            -- Pseudorandom seed for map updates
 local debugFontSmall, debugFontLarge
 
-function love.load()
-    spriteMap = require("spritemap")
-    mapArray = require("maps.map01")
-    --message = require("message") -- Load message module
-
+function love.load(args)
     love.window.setMode(1280, 800, {resizable=true, vsync=false})
     love.window.setTitle("Scattered Verses")
-    love.graphics.setDefaultFilter("nearest", "nearest")
 
     appWidth, appHeight = love.graphics.getDimensions()
-    require("src/require")
-    requireAll()
+    canvas:initialize(window.width, window.height)
+    terrain:build(mapArray)
+    grass:buildFlourishes()
 
     -- Fonts are created once; making them every frame leaks memory fast.
     debugFontSmall = love.graphics.newFont(12)
@@ -38,6 +72,9 @@ function love.load()
     seed = 1 -- Starting seed for xorshift16 map updates
 
     view:resize(appWidth, appHeight)  -- size the game view for the starting zoom
+    camera:snap()
+
+    devtools.start(args)              -- no-op unless --shots / --bench was given
 end
 
 function love.resize(w, h)
@@ -71,34 +108,37 @@ function love.keyreleased(key)
     end
 end
 
+-- Watered crops grow one stage at random moments: each tick, 20 random
+-- cells are checked (xorshift16 visits all 65535 values before repeating,
+-- so every cell gets its turn).
+local function growCrops()
+    for i = 1, 20 do
+        seed = xorshift16(seed)
+        if seed <= 10000 then
+            local y = math.floor((seed - 1) / 100) + 1 -- Row 1-100
+            local x = ((seed - 1) % 100) + 1           -- Column 1-100
+            local cell = mapArray[y] and mapArray[y][x]
+            -- Watered (odd) and not fully grown: becomes the next dry stage.
+            if cell and tiles.isWetCrop(cell[1]) and cell[1] < 87 then
+                cell[1] = cell[1] + 1
+            end
+        end
+    end
+end
+
 function love.update(dt)
     local fixedDt = 1 / 60
     accumulator = accumulator + dt
 
     while accumulator >= fixedDt do
+        player:rememberPosition()      -- for smooth drawing between ticks
         if not message.isActive then
             player:update(fixedDt)
         end
         sun:update(fixedDt)      -- day/night cycle (+ M/N to scrub time)
         ui:update(fixedDt) -- Update UI animations
         message:update(fixedDt) -- Update message typing
-
-        for i = 1, 20 do
-            -- Map update using xorshift16 (grow watered crop stages 1-7 to next dry stage)
-            seed = xorshift16(seed)
-            if seed <= 10000 then
-                local index = seed
-                local y = math.floor((index - 1) / 100) + 1 -- Row 1-100
-                local x = ((index - 1) % 100) + 1 -- Column 1-100
-                local tileData = mapArray[y] and mapArray[y][x]
-                if tileData then
-                    local t = tileData[1]
-                    if t >= 73 and t <= 85 and t % 2 == 1 then
-                        tileData[1] = t + 1
-                    end
-                end
-            end
-        end
+        growCrops()
 
         -- Update object animations
         for _, obj in ipairs(object.objects) do
@@ -111,26 +151,10 @@ function love.update(dt)
     if love.keyboard.isDown('escape') then
         love.event.quit()
     end
-    -- Zoom glide (Z / X); resizes the game view when needed.
-    view:update(dt, appWidth, appHeight)
 
-    player.isNearOutlinedObject = false
-end
-
--- Draws one row's sprites ("specials") back to front.
-local function drawSpecial(item)
-    local a = item.args
-    if item.type == "crop" then
-        crop:draw(a[1], a[2], a[3], a[4], a[5], a[6])
-    elseif item.type == "tree" then
-        tree:draw(a[1], a[2], a[3], a[4], a[5])
-    elseif item.type == "object" then
-        --object:drawSingle(unpack(a))
-    elseif item.type == "tallGrass" then
-        -- (tall grass drawing currently disabled)
-    elseif item.type == "player" then
-        player:draw(a[1], a[2], a[3])
-    end
+    player:updateDrawPosition(alpha)
+    view:update(dt, appWidth, appHeight)   -- zoom glide (Z / X); resizes the game view when needed
+    camera:update(dt)                      -- follow the player, clamped to the map
 end
 
 -- Sort sprites within a row by where they touch the ground (lower on screen
@@ -142,8 +166,12 @@ local function bySortKey(a, b)
     return a.sortX < b.sortX
 end
 
-local special = {}       -- reused every row to avoid garbage
-local occluders = {}     -- screen rects of this row's cliffs
+-- Extra tiles processed beyond the screen edges, so things just off screen
+-- still cast shadows into view: a tree (~250 px tall) at the lowest sun
+-- (45 degrees) throws a shadow ~250 px, about 8 tiles.
+local MARGIN_TILES = 9
+
+local rows = {}  -- per visible map row: { items = {...}, occluders = {...} }, reused each frame
 
 function love.draw()
     local ts = sprites.size
@@ -151,10 +179,9 @@ function love.draw()
     sprites.tileBatch:clear()
     spriteShadow:clear()
 
+    local cameraX, cameraY = camera:get()
     local tilesHorizontal = math.ceil(window.width / ts)
     local tilesVertical = math.ceil(window.height / ts)
-    local cameraX = player.x - window.width / 2
-    local cameraY = player.y - window.height / 2
     local firstTileX = math.floor(cameraX / ts)
     local firstTileY = math.floor(cameraY / ts)
     local offsetX = cameraX % ts
@@ -164,97 +191,94 @@ function love.draw()
     lighting:begin()
     terrain:drawSurfaceMap(cameraX, cameraY)
 
-    -- 2. Scene, one tile row at a time from the back (top) to the front.
-    -- Rows below the screen are included (+ maxHeight) because tall cliffs
-    -- there reach up into view.
-    local extraRows = math.ceil(terrain.maxHeight / ts) + 1
+    -- Which row each Bible page and the player belong to.
+    local pagesByRow = {}
+    for _, obj in ipairs(object.objects) do
+        local r = object:rowOf(obj)
+        pagesByRow[r] = pagesByRow[r] or {}
+        table.insert(pagesByRow[r], obj)
+    end
+    local playerRow = math.floor(player.drawY / ts) + 1
+
+    -- 2. Collect, one tile row at a time from the back (top) to the front.
+    -- Rows below the screen are included because tall cliffs there reach up
+    -- into view and sprites there cast shadows up into view.
+    local extraRows = math.max(math.ceil(terrain.maxHeight / ts) + 1, MARGIN_TILES)
+    local rowCount = 0
     for y = 0, tilesVertical + extraRows do
         local yC = firstTileY + y
-        if yC < 1 or yC > #mapArray then goto continueY end
+        if yC >= 1 and yC <= #mapArray then
+            rowCount = rowCount + 1
+            local row = rows[rowCount] or { items = {}, occluders = {} }
+            rows[rowCount] = row
+            local items, occluders = row.items, row.occluders
+            for i = #items, 1, -1 do items[i] = nil end
+            for i = #occluders, 1, -1 do occluders[i] = nil end
 
-        for i = #special, 1, -1 do special[i] = nil end
-        local occluderCount = 0
+            for x = -MARGIN_TILES, tilesHorizontal + MARGIN_TILES do
+                local xC = firstTileX + x
+                local cell = mapArray[yC][xC]
+                if cell then
+                    -- Screen position of this tile at ground level.
+                    local screenX = (x - 1) * ts - offsetX
+                    local screenY = (y - 1) * ts - offsetY
+                    local tile, z = cell[1], cell[2]
+                    local def = tiles.get(tile)
 
-        for x = -5, tilesHorizontal + 5 do
-            local xC = firstTileX + x
-            local cell = mapArray[yC][xC]
-            if not cell then goto continueX end
+                    if z ~= 0 then
+                        mountain:add(xC, yC, z, screenX, screenY)
+                        occluders[#occluders + 1] = {mountain:footprint(z, screenX, screenY)}
+                    end
 
-            -- Screen position of this tile at ground level.
-            local screenX = (x - 1) * ts - offsetX
-            local screenY = (y - 1) * ts - offsetY
-            local tile, z = cell[1], cell[2]
-
-            if z ~= 0 then
-                mountain:add(xC, yC, z, screenX, screenY)
-                occluderCount = occluderCount + 1
-                occluders[occluderCount] = {mountain:footprint(z, screenX, screenY)}
-            end
-
-            -- Every tile type sits on grass.
-            grass:add(xC, yC, z, screenX, screenY)
-
-            -- Sprites are sorted by the screen y where they touch the ground.
-            if tile == 1 then
-                grass:addFlourish(xC, yC, z, screenX, screenY)
-            elseif tile == 10 then
-                special[#special + 1] = { sortY = screenY, sortX = screenX, type = "tallGrass",
-                    args = {xC, yC, z, screenX, screenY} }
-            elseif tile == 56 then
-                dirt:add(xC, yC, z, screenX, screenY)
-            elseif tile >= 72 and tile <= 87 then
-                dirt:add(xC, yC, z, screenX, screenY)
-                if tile % 2 == 1 then
-                    -- Wet-soil overlay for watered (odd) stages, drawn under the plant.
-                    special[#special + 1] = { sortY = screenY + 23, sortX = screenX, type = "crop",
-                        args = {xC, yC, z, screenX, screenY, 70} }
+                    grass:add(xC, yC, z, screenX, screenY)  -- every tile sits on grass
+                    if def.ground == "dirt" then dirt:add(xC, yC, z, screenX, screenY) end
+                    if def.flourish then grass:addFlourish(xC, yC, z, screenX, screenY) end
+                    if def.addSprites then def.addSprites(items, xC, yC, z, screenX, screenY, tile) end
                 end
-                special[#special + 1] = { sortY = screenY + 24, sortX = screenX, type = "crop",
-                    args = {xC, yC, z, screenX, screenY, tile} }
-            elseif tile == 512 then
-                special[#special + 1] = { sortY = screenY + 26, sortX = screenX, type = "tree",
-                    args = {xC, yC, z, screenX, screenY} }
             end
-            ::continueX::
+
+            for _, obj in ipairs(pagesByRow[yC] or {}) do
+                object:addSprites(items, obj, cameraX, cameraY)
+            end
+            if yC == playerRow then
+                player:addSprites(items, cameraX, cameraY)
+            end
         end
+    end
+
+    -- 3. Every queued sprite shadow (one draw call per sprite sheet).
+    spriteShadow:flush(lighting.sun, lighting.lamp, cameraX, cameraY)
+
+    -- 4. Sprites, back to front.
+    for r = 1, rowCount do
+        local row = rows[r]
 
         -- Cliffs in this row hide anything already drawn behind them.
-        -- (Objects in this same row are drawn after this, so stay in front.)
-        if occluderCount > 0 then
+        -- (This row's own sprites are drawn after, so they stay in front.)
+        if #row.occluders > 0 then
             love.graphics.setCanvas(canvas.object)
             love.graphics.setBlendMode("replace")
             love.graphics.setColor(0, 0, 0, 0)
-            for i = 1, occluderCount do
-                local r = occluders[i]
-                love.graphics.rectangle("fill", r[1], r[2], r[3], r[4])
+            for _, o in ipairs(row.occluders) do
+                love.graphics.rectangle("fill", o[1], o[2], o[3], o[4])
             end
             love.graphics.setBlendMode("alpha")
             love.graphics.setColor(1, 1, 1, 1)
         end
 
-        -- The player belongs to the row his feet are in.
-        if math.floor(player.y / ts) + 1 == yC then
-            special[#special + 1] = { sortY = player.y - cameraY, sortX = player.x - cameraX,
-                type = "player", args = {cameraX, cameraY, alpha} }
+        table.sort(row.items, bySortKey)
+        for _, item in ipairs(row.items) do
+            local tint = lighting:objectTint(item.tintX, item.tintY, item.tintZ, item.caster)
+            item.owner:drawItem(item, tint)
         end
-
-        table.sort(special, bySortKey)
-        for _, item in ipairs(special) do
-            drawSpecial(item)
-        end
-
-        ::continueY::
     end
 
-    -- 3. Every queued sprite shadow in one pass.
-    spriteShadow:flush(lighting.sun, lighting.lamp, cameraX, cameraY)
-
-    -- 4. Ground tiles.
+    -- 5. Ground tiles.
     love.graphics.setCanvas(canvas.offscreen)
     love.graphics.draw(sprites.tileBatch)
     player:drawOutline(cameraX, cameraY, mapArray)
 
-    -- 5. Lighting, shadows and colour grading.
+    -- 6. Lighting, shadows and colour grading.
     lighting:composite(cameraX, cameraY)
 
     -- Debug (C key): overlay the surface map.
@@ -266,7 +290,7 @@ function love.draw()
         love.graphics.setShader()
     end
 
-    -- 6. Scale up to the window (crisp, see view.lua).
+    -- 7. Scale up to the window (crisp, see view.lua).
     view:present(appWidth, appHeight)
 
     -- Draw inventory UI if not showing message box
@@ -276,6 +300,8 @@ function love.draw()
 
     -- Draw message box
     message:draw(appWidth, appHeight)
+
+    if devtools.hideOverlay then return end
 
     -- Debug readout
     love.graphics.setColor(1, 1, 1, 1)

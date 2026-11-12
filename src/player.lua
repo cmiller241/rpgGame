@@ -9,7 +9,20 @@
 -- ground level, -32 = one tile up). player.shadowZ is the z of the ground
 -- under him, so (shadowZ - z) is how high he is jumping.
 
-player = {}
+local player = {}
+package.loaded[...] = player  -- register now, so modules that require each other share this table
+
+local canvas = require("src.canvas")
+local mapArray = require("maps.map01")
+local message = require("src.message")
+local object = require("src.objects")
+local sounds = require("src.sounds")
+local spriteMap = require("spritemap")
+local spriteShadow = require("src.spriteShadow")
+local sprites = require("src.sprites")
+local tiles = require("src.tiles")
+local toolbarMap = require("src.toolbarMap")
+local ui = require("src.ui")
 
 player.spriteSheet = love.graphics.newImage("img/sprites-fixedgrid.png")
 player.quads = {}
@@ -40,7 +53,7 @@ player.state = "Standing"
 player.frame = 1
 player.frameTime = 0
 player.frameDuration = 0.2
-player.isNearOutlinedObject = false
+player.facingPage = nil      -- Bible page he could pick up right now (set in update)
 
 -- Tool animation tracking
 player.animations = {
@@ -122,6 +135,7 @@ end
 -- movement, jumping and gravity.
 function player:update(dt)
     if message.isActive then return end
+    self.facingPage = object:findFacing(self)    -- drives the outline and the F key
     local prevState, prevDir = self.state, self.direction
     local isToolState = self.animations[self.state]
     local frameDuration = spriteMap.Cody[self.state][self.direction].frames[self.frame].duration or 5.0
@@ -226,46 +240,20 @@ function player:keypressed(key)
         self.direction = "Down"
         self.frame = 1
     elseif key == "f" then
-        if self.isNearOutlinedObject then
-            if self:canPickUp() then
-                -- Find the nearest object and store its message
-                local nearestObj, minDistance = nil, math.huge
-                for _, obj in ipairs(object.objects) do
-                    local dx = self.x - obj.x
-                    local dy = self.y - obj.y
-                    local distance = math.sqrt(dx * dx + dy * dy)
-                    local isFacing = false
-                    if self.direction == "Up" and dy > 0 then
-                        isFacing = true
-                    elseif self.direction == "Down" and dy < 0 then
-                        isFacing = true
-                    elseif self.direction == "Left" and dx > 0 then
-                        isFacing = true
-                    elseif self.direction == "Right" and dx < 0 then
-                        isFacing = true
-                    end
-                    if distance < 50 and isFacing and distance < minDistance then
-                        minDistance = distance
-                        nearestObj = obj
-                    end
-                end
-                if nearestObj then
-                    message.text = nearestObj.message
-                    message.verse = nearestObj.verse
-                    message.tool = nearestObj.tool
-                    message.toolMessage = nearestObj.toolMessage or ""
-                    object:removeNearest(self.x, self.y)
-                    self.state = "PickUp"
-                    self.frame, self.frameTime = 1, 0
-                    local anim = self.animations["PickUp"]
-                    anim.time = 0
-                    anim.done = false
-                    local s = (sounds.sow or sounds.shovel):clone()
-                    s:setPitch(love.math.random(0.9, 1.1))
-                    s:setVolume(love.math.random(0.8, 1.0))
-                    s:play()
-                end
-            end
+        local page = object:findFacing(self)
+        if page then
+            -- Pick up the Bible page in front of him and queue its message.
+            message.text = page.message
+            message.verse = page.verse
+            message.tool = page.tool
+            message.toolMessage = page.toolMessage or ""
+            object:remove(page)
+            self.state = "PickUp"
+            self.frame, self.frameTime = 1, 0
+            local anim = self.animations["PickUp"]
+            anim.time = 0
+            anim.done = false
+            sounds.play("sow")
         elseif toolbarMap then
             local slot = toolbarMap.slots[toolbarMap.visibleSlots[ui.highlightedSlot]]
             local tool = slot.name
@@ -278,10 +266,7 @@ function player:keypressed(key)
                     local anim = self.animations[state]
                     anim.time = 0
                     anim.done = false
-                    local s = (sounds[sound] or sounds.shovel):clone()
-                    s:setPitch(love.math.random(0.9, 1.1))
-                    s:setVolume(love.math.random(0.8, 1.0))
-                    s:play()
+                    sounds.play(sound)
                 end
             end
 
@@ -345,7 +330,8 @@ function player:moveAxis(axis, target)
 end
 
 -- Can the player's collision box be at (newX, newY) at height newZ? Blocked
--- by solid tiles (type > 500, e.g. trees) and by any tile taller than newZ.
+-- by the solid part of a tile (e.g. a tree trunk, see tiles.lua), by any
+-- tile taller than newZ, and by the edge of the map.
 --
 -- See BOX_LEFT etc. at the top of this file for the box's size.
 function player:canMoveTo(newX, newY, newZ)
@@ -353,19 +339,17 @@ function player:canMoveTo(newX, newY, newZ)
     local right = newX + BOX_RIGHT
     local top = newY + BOX_TOP
     local bottom = newY + BOX_BOTTOM
+    local ts = sprites.size
 
-    local topLeftTile = self:getTile(left, top)
-    local topRightTile = self:getTile(right, top)
-    local bottomLeftTile = self:getTile(left, bottom)
-    local bottomRightTile = self:getTile(right, bottom)
-
-    if (topLeftTile.v > 500 or topRightTile.v > 500 or 
-        bottomLeftTile.v > 500 or bottomRightTile.v > 500 or
-        topLeftTile.z < newZ or topRightTile.z < newZ or 
-        bottomLeftTile.z < newZ or bottomRightTile.z < newZ) then
-        return false
+    -- Every tile the box overlaps (at most 2x2).
+    for row = math.floor(top / ts) + 1, math.floor(bottom / ts) + 1 do
+        for col = math.floor(left / ts) + 1, math.floor(right / ts) + 1 do
+            local cell = mapArray[row] and mapArray[row][col]
+            if not cell then return false end                       -- off the map
+            if cell[2] < newZ then return false end                 -- taller than us
+            if tiles.blocks(col, row, left, top, right, bottom) then return false end
+        end
     end
-
     return true
 end
 
@@ -402,41 +386,50 @@ end
 
 function player:canWater(tx, ty)
     if mapArray[ty] and mapArray[ty][tx] then
-        local tile = mapArray[ty][tx][1]
-        return (tile >= 72 and tile <= 86 and tile % 2 == 0) and mapArray[ty][tx][2] == self.z
+        return tiles.isDryCrop(mapArray[ty][tx][1]) and mapArray[ty][tx][2] == self.z
     end
     return false
 end
 
--- Is a Bible page within 50 px and in the direction the player is facing?
+-- Is a Bible page within reach and in the direction the player is facing?
 function player:canPickUp()
-    for _, obj in ipairs(object.objects) do
-        local dx = self.x - obj.x
-        local dy = self.y - obj.y
-        local distance = math.sqrt(dx * dx + dy * dy)
-        local isFacing = false
-        if self.direction == "Up" and dy > 0 then
-            isFacing = true
-        elseif self.direction == "Down" and dy < 0 then
-            isFacing = true
-        elseif self.direction == "Left" and dx > 0 then
-            isFacing = true
-        elseif self.direction == "Right" and dx < 0 then
-            isFacing = true
-        end
-        if distance < 50 and isFacing then
-            return true
-        end
-    end
-    return false
+    return object:findFacing(self) ~= nil
 end
 
--- Draws the player to canvas.object (tinted if he's standing in a cliff's
--- shadow) and queues his shadow. Also draws the Bible page he's holding
--- during a pickup.
-function player:draw(cameraX, cameraY)
-    local characterScreenX = self.x - cameraX
-    local characterScreenY = self.y - cameraY
+-- SMOOTH DRAWING
+-- Movement runs at a fixed 60 ticks/second, but the screen may refresh
+-- faster. Drawing his exact tick position would hold him still for a few
+-- frames and then jump. Instead we remember where he was at the start of
+-- the tick and draw him part-way between that and where he is now.
+player.prevX, player.prevY, player.prevZ = player.x, player.y, player.z
+player.drawX, player.drawY, player.drawZ = player.x, player.y, player.z
+
+-- Moves him instantly (no smoothing between old and new spot).
+function player:teleport(x, y, z)
+    self.x, self.y, self.z = x, y, z or 0
+    self.shadowZ = self:getTile(self.x + 16, self.y).z
+    self.vx, self.vy, self.vz = 0, 0, 0
+    self:rememberPosition()
+    self:updateDrawPosition(1)
+end
+
+-- Call at the start of every fixed update tick, before he moves.
+function player:rememberPosition()
+    self.prevX, self.prevY, self.prevZ = self.x, self.y, self.z
+end
+
+-- alpha = how far we are into the next tick (0..1). Rounded to whole pixels
+-- so the pixel art stays crisp.
+function player:updateDrawPosition(alpha)
+    local function lerp(a, b) return math.floor(a + (b - a) * alpha + 0.5) end
+    self.drawX = lerp(self.prevX, self.x)
+    self.drawY = lerp(self.prevY, self.y)
+    self.drawZ = lerp(self.prevZ, self.z)
+end
+
+-- Called while building the scene (see main.lua). Renders his current frame
+-- into canvas.temp, queues his shadow, and adds a draw item.
+function player:addSprites(list, cameraX, cameraY)
     local flipX = self.direction == "Left" and -1 or 1
     local spriteNumber = spriteMap.Cody[self.state][self.direction].frames[self.frame].sprite
 
@@ -457,27 +450,39 @@ function player:draw(cameraX, cameraY)
     love.graphics.draw(self.spriteSheet, self.quads[spriteNumber], 100, 100 - 56, 0, flipX, 1, bodyCentre, 0)
 
     -- In canvas.temp the feet are at row 124, centred on column 100.
-    local anchorX = 100
-    local flipOffsetX = 0   -- used by the pickup overlay below (always facing Down)
-    local anchorY = 124
-    local jumpHeight = self.shadowZ - self.z     -- px above the ground (z is negative-up)
+    local x, y, z = self.drawX, self.drawY, self.drawZ
+    local jumpHeight = math.max(0, self.shadowZ - z)  -- px above the ground (z is negative-up)
 
-    spriteShadow:add{
+    -- No `data` field: his silhouette only exists on the GPU (canvas.temp),
+    -- so he casts shadows on the ground but not onto other sprites.
+    local caster = {
         image = canvas.temp,
         quadX = 0, quadY = 0, quadW = 200, quadH = 200,
-        anchorX = anchorX, anchorY = anchorY,
-        worldX = self.x + 16 + (anchorX - 100),
-        worldY = self.y - 4,
-        worldZ = -self.shadowZ,
+        anchorX = 100, anchorY = 124,
+        worldX = x + 16, worldY = y - 4, worldZ = -self.shadowZ,
         lift = jumpHeight,
         opacity = 1 - jumpHeight / 320,          -- shadow fades the higher he jumps
     }
+    spriteShadow:add(caster)
 
-    local tint = lighting:objectTint(self.x + 16, self.y - 4, -self.z + 24)
+    list[#list + 1] = {
+        owner = self, caster = caster,
+        sortY = y - cameraY, sortX = x - cameraX,
+        screenX = x - cameraX, screenY = y - cameraY, z = z,
+        tintX = x + 16, tintY = y - 4, tintZ = -z + 24,
+    }
+end
+
+-- Draws the player (from canvas.temp) onto canvas.object, plus the Bible page
+-- he's holding during a pickup.
+function player:drawItem(item, tint)
+    local characterScreenX, characterScreenY = item.screenX, item.screenY
+    local flipX = self.direction == "Left" and -1 or 1
+    local flipOffsetX = 0   -- the pickup overlay below always faces Down
+
     love.graphics.setCanvas(canvas.object)
     love.graphics.setColor(tint, tint, tint, 1)
-    love.graphics.draw(canvas.temp, characterScreenX + 16 - 100, characterScreenY - 128 + self.z)
-    love.graphics.setColor(1, 1, 1, 1)
+    love.graphics.draw(canvas.temp, characterScreenX + 16 - 100, characterScreenY - 128 + item.z)
 
     -- Draw Bible page in player's hands during PickUp animation or when message is active
     if self.state == "PickUp" or message.isActive then
@@ -506,23 +511,24 @@ function player:draw(cameraX, cameraY)
             sprites.objects,
             sprites.biblePageCenter,
             characterScreenX + 16 - 32 + pageOffsetX,
-            characterScreenY - 64 + self.z + pageOffsetY,
+            characterScreenY - 64 + item.z + pageOffsetY,
             0,
             1,
             1,
             0,
             0
         )
-        if self.frame == 2 and self.direction == "Down" then 
-            love.graphics.draw(self.spriteSheet, self.quads[97], characterScreenX + 16 - 55, characterScreenY - 84 + self.z, 0, flipX, 1, flipOffsetX, 0)
+        if self.frame == 2 and self.direction == "Down" then
+            love.graphics.draw(self.spriteSheet, self.quads[97], characterScreenX + 16 - 55, characterScreenY - 84 + item.z, 0, flipX, 1, flipOffsetX, 0)
         end
     end
+    love.graphics.setColor(1, 1, 1, 1)
 end
 
 -- Yellow box on the tile in front of the player when the selected tool can
 -- be used there.
 function player:drawOutline(cameraX, cameraY, mapArray)
-    if self.isNearOutlinedObject then return end
+    if self.facingPage then return end   -- the page's outline takes priority
 
     if not toolbarMap then
         if not toolbarMapErrorPrinted then
@@ -553,3 +559,5 @@ function player:drawOutline(cameraX, cameraY, mapArray)
     end
     love.graphics.setColor(1, 1, 1, 1)
 end
+
+return player

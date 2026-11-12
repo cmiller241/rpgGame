@@ -10,7 +10,8 @@
 --   intermediate  the lit, colour-graded frame before it's scaled to the window
 --   temp          200x200 scratch space for the player's current frame
 
-canvas = {}
+local canvas = {}
+package.loaded[...] = canvas  -- register now, so modules that require each other share this table
 
 function canvas:initialize(cWidth, cHeight)
     canvas.object       = love.graphics.newCanvas(cWidth, cHeight)
@@ -42,3 +43,5 @@ function canvas:clear()
     end
     love.graphics.setCanvas()
 end
+
+return canvas

@@ -1,5 +1,6 @@
 -- Initialize sprites table
-sprites = {}
+local sprites = {}
+package.loaded[...] = sprites  -- register now, so modules that require each other share this table
 
 -- Load images
 sprites.land = love.graphics.newImage("img/sprites2.png")
@@ -19,6 +20,13 @@ sprites.objects = love.graphics.newImage("img/objects.png")
 sprites.parchment = love.graphics.newImage("img/parchment.png")
 sprites.textbox = love.graphics.newImage("img/textbox.png")
 sprites.size = 32
+
+-- CPU-readable copies of the sprite sheets that cast shadows, so Lua can
+-- check whether one sprite is standing in another's shadow (see
+-- spriteShadow:sunShadowAt).
+sprites.treeData    = love.image.newImageData("img/tree4.png")
+sprites.cropData    = love.image.newImageData("img/crop.png")
+sprites.objectsData = love.image.newImageData("img/objects.png")
 
 -- Load quads for general sprites
 sprites.spritesQuads = {}
@@ -65,3 +73,5 @@ end
 
 -- Bible page animation frame
 sprites.biblePageCenter = sprites.objectQuads[1] -- First frame: centered
+
+return sprites

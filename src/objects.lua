@@ -1,5 +1,13 @@
 -- objects.lua
-object = {}
+local object = {}
+package.loaded[...] = object  -- register now, so modules that require each other share this table
+
+local canvas = require("src.canvas")
+local player = require("src.player")
+local shader = require("src.shader")
+local spriteShadow = require("src.spriteShadow")
+local sprites = require("src.sprites")
+local terrain = require("src.terrain")
 
 -- Define the objects array
 object.objects = {
@@ -41,70 +49,78 @@ object.objects = {
     }
 }
 
--- Draws one floating Bible page and queues its shadow.
-function object:drawSingle(obj, cameraX, cameraY)
+-- How close (px) the player must be to pick a page up.
+object.reach = 50
+
+-- The nearest page within reach that the player is facing, or nil.
+-- "Facing" means the page is on the side he's looking toward.
+function object:findFacing(p)
+    local best, bestDist = nil, self.reach
+    for _, obj in ipairs(self.objects) do
+        local dx, dy = obj.x - p.x, obj.y - p.y
+        local dist = math.sqrt(dx * dx + dy * dy)
+        local facing = (p.direction == "Up" and dy < 0) or (p.direction == "Down" and dy > 0)
+                    or (p.direction == "Left" and dx < 0) or (p.direction == "Right" and dx > 0)
+        if facing and dist < bestDist then
+            best, bestDist = obj, dist
+        end
+    end
+    return best
+end
+
+function object:remove(obj)
+    for i, o in ipairs(self.objects) do
+        if o == obj then
+            table.remove(self.objects, i)
+            return
+        end
+    end
+end
+
+-- Map row (1-based) a page belongs to for draw ordering: the row its
+-- ground point is in.
+function object:rowOf(obj)
+    return math.floor((obj.y - 4) / sprites.size) + 1
+end
+
+-- Called while building the scene (see main.lua). Queues the page's shadow
+-- and adds a draw item. The 64x64 sprite is drawn with its bottom-centre at
+-- (obj.x, obj.y), bobbing up and down.
+function object:addSprites(list, obj, cameraX, cameraY)
+    local groundX, groundY = obj.x, obj.y - 4
+    local groundH = terrain:heightAtWorld(groundX, groundY)
     -- Bob up and down: 1 s period, 4 px amplitude.
     local yOffset = math.sin(obj.animationTime * 2 * math.pi) * 4
 
-    -- The 64x64 page sprite is drawn with its bottom-centre at (obj.x, obj.y).
-    -- Treat its bottom row as hovering 4 px above the ground at rest.
+    -- Its bottom row (60) hovers 4 px above the ground at rest.
     local qx, qy, qw, qh = sprites.biblePageCenter:getViewport()
-    spriteShadow:add{
-        image = sprites.objects,
+    local caster = {
+        image = sprites.objects, data = sprites.objectsData,
         quadX = qx, quadY = qy, quadW = qw, quadH = qh,
         anchorX = 32, anchorY = 60,
-        worldX = obj.x, worldY = obj.y - 4,
-        worldZ = terrain:heightAtWorld(obj.x, obj.y - 4),
+        worldX = groundX, worldY = groundY, worldZ = groundH,
         lift = 4 - yOffset,
     }
+    spriteShadow:add(caster)
 
-    -- Draw Bible page with outline shader if player is near and facing it
+    list[#list + 1] = {
+        owner = self, caster = caster, obj = obj,
+        sortY = groundY - cameraY, sortX = groundX - cameraX,
+        drawX = obj.x - 32 - cameraX, drawY = obj.y - 64 - cameraY + yOffset - groundH,
+        tintX = groundX, tintY = groundY, tintZ = groundH + 30,
+    }
+end
+
+-- Draws a page item, outlined if it's the one the player can pick up.
+function object:drawItem(item, tint)
     love.graphics.setCanvas(canvas.object)
-    -- Calculate distance between player position and Bible page position
-    local dx = player.x - obj.x
-    local dy = player.y - obj.y
-    local distance = math.sqrt(dx * dx + dy * dy)
-    local isFacing = false
-    if player.direction == "Up" and dy > 0 then
-        isFacing = true
-    elseif player.direction == "Down" and dy < 0 then
-        isFacing = true
-    elseif player.direction == "Left" and dx > 0 then
-        isFacing = true
-    elseif player.direction == "Right" and dx < 0 then
-        isFacing = true
-    end
-    if distance < 50 and isFacing then
-        -- Apply outline shader and set player flag
+    if item.obj == player.facingPage then
         love.graphics.setShader(shader.outline)
-        player.isNearOutlinedObject = true
     end
-    love.graphics.draw(sprites.objects, sprites.biblePageCenter, obj.x - 32 - cameraX, obj.y - 64 - cameraY + yOffset)
+    love.graphics.setColor(tint, tint, tint, 1)
+    love.graphics.draw(sprites.objects, sprites.biblePageCenter, item.drawX, item.drawY)
+    love.graphics.setColor(1, 1, 1, 1)
     love.graphics.setShader()
 end
 
-function object:removeNearest(playerX, playerY)
-    local nearestIndex, minDistance = nil, math.huge
-    for i, obj in ipairs(self.objects) do
-        local dx = playerX - obj.x
-        local dy = playerY - obj.y
-        local distance = math.sqrt(dx * dx + dy * dy)
-        local isFacing = false
-        if player.direction == "Up" and dy > 0 then
-            isFacing = true
-        elseif player.direction == "Down" and dy < 0 then
-            isFacing = true
-        elseif player.direction == "Left" and dx > 0 then
-            isFacing = true
-        elseif player.direction == "Right" and dx < 0 then
-            isFacing = true
-        end
-        if distance < 50 and isFacing and distance < minDistance then
-            minDistance = distance
-            nearestIndex = i
-        end
-    end
-    if nearestIndex then
-        table.remove(self.objects, nearestIndex)
-    end
-end
+return object

@@ -1,5 +1,9 @@
 -- ui.lua
-ui = {}
+local ui = {}
+package.loaded[...] = ui  -- register now, so modules that require each other share this table
+
+local sprites = require("src.sprites")
+local toolbarMap = require("src.toolbarMap")
 
 ui.highlightedSlot = 1 -- Track the currently highlighted slot (1 to 10)
 ui.slotScales = {} -- Current scale for each slot
@@ -157,3 +161,5 @@ function ui:keypressed(key)
         self.slotScaleTimers[self.highlightedSlot] = 0
     end
 end
+
+return ui

@@ -1,53 +1,83 @@
 -- tree.lua
 --
--- Trees (tile type 512). Each tree is drawn straight onto the object canvas
--- with the wind-sway shader, and queues its shadow with spriteShadow.
+-- Oak (tile 512) and pine (tile 520) trees. Both live in img/tree4.png as
+-- 480x480 quads. Each tree is drawn with the wind-sway shader and casts a
+-- shadow that sways in step with its canopy.
 
-tree = {}
+local tree = {}
+package.loaded[...] = tree  -- register now, so modules that require each other share this table
 
--- Where the trunk meets the ground inside the 480x480 tree quad, and the
--- point in the quad that lines up with the tile's top-left corner.
-local ANCHOR_X, ANCHOR_Y = 240, 250
-local ORIGIN_X, ORIGIN_Y = 224, 224
--- Height (px above the base) used to decide if a tree is in a cliff's
--- shadow: about the middle of the canopy.
+local canvas = require("src.canvas")
+local shader = require("src.shader")
+local spriteShadow = require("src.spriteShadow")
+local sprites = require("src.sprites")
+
+-- Per kind: which quad, and the point in that quad (anchorX, anchorY) where
+-- the tree meets the ground. That point is placed at BASE_IN_TILE inside the
+-- tile, so both kinds stand in the same spot.
+local KINDS = {
+    oak  = { quad = sprites.treeTrunk, anchorX = 240, anchorY = 250 },
+    pine = { quad = sprites.pineTree,  anchorX = 244, anchorY = 258 },
+}
+local BASE_IN_TILE_X, BASE_IN_TILE_Y = 16, 26
+
+-- Wind: max sideways shift at the treetop (px) and speed.
+local WIND_PX, WIND_SPEED = 5, 3.0
+-- Where the bend starts, as a fraction down the 480 px quad (trunk base ~0.52).
+local SWAY_ANCHOR_V = 0.55
+-- Height (px above the base) used to decide if a tree is in shadow: mid-canopy.
 local TINT_SAMPLE_HEIGHT = 110
 
-function tree:draw(xC, yC, z, screenX, screenY)
+-- Called while building the scene (see main.lua). Queues the tree's shadow
+-- and adds a draw item to `list`.
+function tree:addSprites(list, kind, xC, yC, z, screenX, screenY)
+    local k = KINDS[kind]
     local ts = sprites.size
-    local quadX, quadY, quadW, quadH = sprites.treeTrunk:getViewport()
-    local texW, texH = sprites.tree:getDimensions()
+    local qx, qy, qw, qh = k.quad:getViewport()
 
-    -- World position of the trunk base.
-    local baseX = (xC - 1) * ts + (ANCHOR_X - ORIGIN_X)
-    local baseY = (yC - 1) * ts + (ANCHOR_Y - ORIGIN_Y)
+    local baseX = (xC - 1) * ts + BASE_IN_TILE_X
+    local baseY = (yC - 1) * ts + BASE_IN_TILE_Y
     local baseZ = -z
 
-    -- The sway shader needs to know which part of the atlas is this sprite,
-    -- so it can keep the trunk still and bend only the canopy.
+    -- One sway value for this frame, shared by the canopy and its shadow.
+    -- The phase differs per tile so neighbouring trees don't move in unison.
+    local swayPx = math.sin(love.timer.getTime() * WIND_SPEED + xC * 1.7 + yC * 0.6) * WIND_PX
+
+    local caster = {
+        image = sprites.tree, data = sprites.treeData,
+        quadX = qx, quadY = qy, quadW = qw, quadH = qh,
+        anchorX = k.anchorX, anchorY = k.anchorY,
+        worldX = baseX, worldY = baseY, worldZ = baseZ,
+        castLamp = true,
+        swayPx = swayPx, swayAnchor = SWAY_ANCHOR_V,
+    }
+    spriteShadow:add(caster)
+
+    list[#list + 1] = {
+        owner = self, caster = caster, kind = k, swayPx = swayPx,
+        sortY = screenY + BASE_IN_TILE_Y, sortX = screenX,
+        drawX = screenX + BASE_IN_TILE_X, drawY = screenY + BASE_IN_TILE_Y + z,
+        tintX = baseX, tintY = baseY, tintZ = baseZ + TINT_SAMPLE_HEIGHT,
+    }
+end
+
+-- Draws a tree item onto canvas.object with brightness `tint`.
+function tree:drawItem(item, tint)
+    local k = item.kind
+    local qx, qy, qw, qh = k.quad:getViewport()
+    local texW, texH = sprites.tree:getDimensions()
+
     local s = shader.windSway
     love.graphics.setCanvas(canvas.object)
     love.graphics.setShader(s)
-    s:send("time", love.timer.getTime())
-    s:send("windStrength", 5.0 / texW)           -- ~5 px max shift at the treetop
-    s:send("windSpeed", 3.0)
-    s:send("phase", xC * 1.7 + yC * 0.6)         -- de-sync neighbouring trees
-    s:send("quadV0", quadY / texH)
-    s:send("quadV1", (quadY + quadH) / texH)
-    s:send("anchorV", 0.55)                      -- 0 = top of quad, 1 = bottom; trunk base ~0.52
-
-    local tint = lighting:objectTint(baseX, baseY, baseZ + TINT_SAMPLE_HEIGHT)
+    s:send("sway", item.swayPx / texW)
+    s:send("quadV0", qy / texH)
+    s:send("quadV1", (qy + qh) / texH)
+    s:send("anchorV", SWAY_ANCHOR_V)
     love.graphics.setColor(tint, tint, tint, 1)
-    love.graphics.draw(sprites.tree, sprites.treeTrunk, screenX, screenY + z, 0, 1, 1, ORIGIN_X, ORIGIN_Y)
+    love.graphics.draw(sprites.tree, k.quad, item.drawX, item.drawY, 0, 1, 1, k.anchorX, k.anchorY)
     love.graphics.setColor(1, 1, 1, 1)
     love.graphics.setShader()
-
-    -- Shadow doesn't sway (it uses the un-sheared sprite).
-    spriteShadow:add{
-        image = sprites.tree,
-        quadX = quadX, quadY = quadY, quadW = quadW, quadH = quadH,
-        anchorX = ANCHOR_X, anchorY = ANCHOR_Y,
-        worldX = baseX, worldY = baseY, worldZ = baseZ,
-        castLamp = true,
-    }
 end
+
+return tree

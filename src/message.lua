@@ -1,7 +1,21 @@
 -- message.lua
-message = {}
+local message = {}
+package.loaded[...] = message  -- register now, so modules that require each other share this table
 
-customFont = love.graphics.newFont("font/EightBitDragon-anqx.ttf", 24) -- Increased font size to 24 pixels
+local player = require("src.player")
+local sprites = require("src.sprites")
+local toolbarMap = require("src.toolbarMap")
+
+-- Fonts are cached by size: creating a font is slow and the old code made
+-- three new ones every frame while a message was showing.
+local FONT_PATH = "font/EightBitDragon-anqx.ttf"
+local fontCache = {}
+local function getFont(size)
+    if not fontCache[size] then
+        fontCache[size] = love.graphics.newFont(FONT_PATH, size)
+    end
+    return fontCache[size]
+end
 message.isActive = false -- Whether a message box is displayed
 message.text = "" -- Stored message from picked-up object
 message.verse = "" -- Stored verse reference (book and verse)
@@ -175,7 +189,7 @@ function message:draw(appWidth, appHeight)
 
             -- Draw tool message to the right of the icon
             if self.toolMessage then
-                local dynamicFont = love.graphics.newFont("font/EightBitDragon-anqx.ttf", math.floor(math.max(20 * appWidth / 1280, 16)))
+                local dynamicFont = getFont(math.floor(math.max(20 * appWidth / 1280, 16)))
                 love.graphics.setFont(dynamicFont)
                 love.graphics.setColor(1, 1, 1, 1) -- White text for toolMessage
                 local textX = iconX + iconSize + 20 * textboxScale -- Increased margin to 20px from icon
@@ -194,11 +208,11 @@ function message:draw(appWidth, appHeight)
     local baseFontSize = 20
     local fontSizeFactor = appWidth / 1280 -- Relative to base width of 1280 pixels
     local fontSize = math.floor(math.max(baseFontSize * fontSizeFactor, 16)) -- Clamp at minimum 16
-    local dynamicFont = love.graphics.newFont("font/EightBitDragon-anqx.ttf", fontSize)
+    local dynamicFont = getFont(fontSize)
 
     -- Verse font (slightly bigger)
     local verseFontSize = math.floor(fontSize * 1.2) -- 20% bigger
-    local verseFont = love.graphics.newFont("font/EightBitDragon-anqx.ttf", verseFontSize)
+    local verseFont = getFont(verseFontSize)
 
     -- Draw verse reference centered at the top of parchment
     love.graphics.setFont(verseFont) -- Set verse font
@@ -234,3 +248,5 @@ function message:keypressed(key)
     end
     return false
 end
+
+return message

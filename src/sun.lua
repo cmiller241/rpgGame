@@ -19,7 +19,8 @@
 -- minAltitude at 45 degrees (tan = 1) means a shadow is never longer than the
 -- height of whatever casts it.
 
-sun = {}
+local sun = {}
+package.loaded[...] = sun  -- register now, so modules that require each other share this table
 
 sun.angle         = 0
 sun.rotationSpeed = 30                  -- degrees/second while holding M or N (debug)
@@ -172,3 +173,5 @@ function sun:getState()
     state.lutRowA, state.lutRowB, state.lutMix = self:getLutBlend(a)
     return state
 end
+
+return sun
