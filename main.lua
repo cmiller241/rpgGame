@@ -1,11 +1,25 @@
+-- main.lua
+--
+-- FRAME OVERVIEW (love.draw)
+--   1. Surface map   terrain:drawSurfaceMap - per-pixel terrain shape for lighting
+--   2. Scene         walk the visible tiles row by row (back to front):
+--                      * ground/cliff tile sprites -> sprites.tileBatch
+--                      * cliffs hide sprites behind them on canvas.object
+--                      * sprites (trees, crops, player) -> canvas.object,
+--                        each queuing its shadow
+--   3. Shadows       spriteShadow:flush - all sprite shadows -> canvas.shadow
+--   4. Ground        tileBatch -> canvas.offscreen (one draw call)
+--   5. Lighting      lighting:composite - shadows, cliff lighting, lamp, LUT
+--   6. Present       view:present - scale canvas.intermediate to the window, draw UI
+
 local appWidth, appHeight
-local scaleFactor, scaleOffsetX, scaleOffsetY
 local accumulator = 0 -- For fixed time-step
 local alpha = 0 -- For interpolation
 local seed -- Pseudorandom seed for map updates
+local debugFontSmall, debugFontLarge
 
 function love.load()
-    spriteMap = require("spriteMap")
+    spriteMap = require("spritemap")
     mapArray = require("maps.map01")
     --message = require("message") -- Load message module
 
@@ -17,14 +31,18 @@ function love.load()
     require("src/require")
     requireAll()
 
+    -- Fonts are created once; making them every frame leaks memory fast.
+    debugFontSmall = love.graphics.newFont(12)
+    debugFontLarge = love.graphics.newFont(32)
+
     seed = 1 -- Starting seed for xorshift16 map updates
 
-    updateDimensions()
+    view:resize(appWidth, appHeight)  -- size the game view for the starting zoom
 end
 
 function love.resize(w, h)
     appWidth, appHeight = w, h
-    updateDimensions()
+    view:resize(appWidth, appHeight)
     ui:resize(appWidth, appHeight)
 end
 
@@ -35,7 +53,11 @@ function love.keypressed(key)
         end
     end
     if key == "c" then
-        canvas.showColorMap = not canvas.showColorMap
+        canvas.showSurfaceMap = not canvas.showSurfaceMap
+    elseif key == "z" then
+        view:step(1, appWidth, appHeight)    -- zoom in one level
+    elseif key == "x" then
+        view:step(-1, appWidth, appHeight)   -- zoom out one level
     elseif key == "a" or key == "s" or key == "r" then
         ui:keypressed(key)
     else
@@ -57,7 +79,7 @@ function love.update(dt)
         if not message.isActive then
             player:update(fixedDt)
         end
-        shadow:update(fixedDt)
+        sun:update(fixedDt)      -- day/night cycle (+ M/N to scrub time)
         ui:update(fixedDt) -- Update UI animations
         message:update(fixedDt) -- Update message typing
 
@@ -89,181 +111,163 @@ function love.update(dt)
     if love.keyboard.isDown('escape') then
         love.event.quit()
     end
-    if love.keyboard.isDown('z') then
-        window.width = window.width - 8
-        window.height = window.height - 8
-        if window.width <= 400 then window.width = 400 end
-        if window.height <= 400 then window.height = 400 end
-        canvas:initialize(window.width, window.height)
-        updateDimensions()
-    end
-    if love.keyboard.isDown('x') then
-        window.width = window.width + 8
-        window.height = window.height + 8
-        if window.width >= 1000 then window.width = 1000 end
-        if window.height >= 1000 then window.height = 1000 end
-        canvas:initialize(window.width, window.height)
-        updateDimensions()
-    end
-    if love.keyboard.isDown('m') then
-        shadow.angle = shadow.angle + shadow.rotationSpeed * fixedDt
-    end
-    if love.keyboard.isDown('n') then
-        shadow.angle = shadow.angle - shadow.rotationSpeed * fixedDt
-        if shadow.angle < 0 then shadow.angle = 0 end
-    end
+    -- Zoom glide (Z / X); resizes the game view when needed.
+    view:update(dt, appWidth, appHeight)
 
     player.isNearOutlinedObject = false
 end
 
-function love.draw()
-    canvas.clear()
-    sprites.tileBatch:clear()
-    sprites.treeBatch:clear()
-    sprites.treeShadowBatch:clear()
-    sprites.cropBatch:clear()
-    sprites.cropShadowBatch:clear()
-    love.graphics.setCanvas(canvas.shadow)
-    love.graphics.clear(0,0,0,0)
+-- Draws one row's sprites ("specials") back to front.
+local function drawSpecial(item)
+    local a = item.args
+    if item.type == "crop" then
+        crop:draw(a[1], a[2], a[3], a[4], a[5], a[6])
+    elseif item.type == "tree" then
+        tree:draw(a[1], a[2], a[3], a[4], a[5])
+    elseif item.type == "object" then
+        --object:drawSingle(unpack(a))
+    elseif item.type == "tallGrass" then
+        -- (tall grass drawing currently disabled)
+    elseif item.type == "player" then
+        player:draw(a[1], a[2], a[3])
+    end
+end
 
-    local tilesHorizontal = math.ceil(window.width / sprites.size)
-    local tilesVertical = math.ceil(window.height / sprites.size)
+-- Sort sprites within a row by where they touch the ground (lower on screen
+-- = closer to the camera = drawn later), then left to right.
+local function bySortKey(a, b)
+    if a.sortY ~= b.sortY then
+        return a.sortY < b.sortY
+    end
+    return a.sortX < b.sortX
+end
+
+local special = {}       -- reused every row to avoid garbage
+local occluders = {}     -- screen rects of this row's cliffs
+
+function love.draw()
+    local ts = sprites.size
+    canvas:clear()
+    sprites.tileBatch:clear()
+    spriteShadow:clear()
+
+    local tilesHorizontal = math.ceil(window.width / ts)
+    local tilesVertical = math.ceil(window.height / ts)
     local cameraX = player.x - window.width / 2
     local cameraY = player.y - window.height / 2
-    local firstTileX = math.floor(cameraX / sprites.size)
-    local firstTileY = math.floor(cameraY / sprites.size)
-    local offsetX = cameraX % sprites.size
-    local offsetY = cameraY % sprites.size
+    local firstTileX = math.floor(cameraX / ts)
+    local firstTileY = math.floor(cameraY / ts)
+    local offsetX = cameraX % ts
+    local offsetY = cameraY % ts
 
-    for y = 0, tilesVertical + 5 do
+    -- 1. Sun/lamp state for this frame, and the terrain's shape on screen.
+    lighting:begin()
+    terrain:drawSurfaceMap(cameraX, cameraY)
+
+    -- 2. Scene, one tile row at a time from the back (top) to the front.
+    -- Rows below the screen are included (+ maxHeight) because tall cliffs
+    -- there reach up into view.
+    local extraRows = math.ceil(terrain.maxHeight / ts) + 1
+    for y = 0, tilesVertical + extraRows do
         local yC = firstTileY + y
         if yC < 1 or yC > #mapArray then goto continueY end
+
+        for i = #special, 1, -1 do special[i] = nil end
+        local occluderCount = 0
+
         for x = -5, tilesHorizontal + 5 do
             local xC = firstTileX + x
-            if xC < 1 or xC > #mapArray[yC] then goto continueX end
-            local xTileOffset = (x - 1) * sprites.size - offsetX
-            local yTileOffset = (y - 1) * sprites.size - offsetY
-            local tile, z = mapArray[yC][xC][1], mapArray[yC][xC][2]
-            local zHeight = z / sprites.size
+            local cell = mapArray[yC][xC]
+            if not cell then goto continueX end
 
+            -- Screen position of this tile at ground level.
+            local screenX = (x - 1) * ts - offsetX
+            local screenY = (y - 1) * ts - offsetY
+            local tile, z = cell[1], cell[2]
+
+            if z ~= 0 then
+                mountain:add(xC, yC, z, screenX, screenY)
+                occluderCount = occluderCount + 1
+                occluders[occluderCount] = {mountain:footprint(z, screenX, screenY)}
+            end
+
+            -- Every tile type sits on grass.
+            grass:add(xC, yC, z, screenX, screenY)
+
+            -- Sprites are sorted by the screen y where they touch the ground.
             if tile == 1 then
-                if z ~= 0 then
-                    drawTreeBatches(cameraX, cameraY)
-                    drawCropBatches(cameraX, cameraY)
-                    mountain:add(xC, yC, z, zHeight, xTileOffset, yTileOffset)
-                end
-                grass:add(xC, yC, z, zHeight, xTileOffset, yTileOffset)
-                grass:addFlourish(xC, yC, z, zHeight, xTileOffset, yTileOffset)
+                grass:addFlourish(xC, yC, z, screenX, screenY)
             elseif tile == 10 then
-                grass:add(xC, yC, z, zHeight, xTileOffset, yTileOffset)
-                tallGrass:add(xC, yC, z, zHeight, xTileOffset, yTileOffset, cameraX, cameraY)
+                special[#special + 1] = { sortY = screenY, sortX = screenX, type = "tallGrass",
+                    args = {xC, yC, z, screenX, screenY} }
             elseif tile == 56 then
-                grass:add(xC, yC, z, zHeight, xTileOffset, yTileOffset)
-                dirt:add(xC, yC, z, zHeight, xTileOffset, yTileOffset)
+                dirt:add(xC, yC, z, screenX, screenY)
             elseif tile >= 72 and tile <= 87 then
-                grass:add(xC, yC, z, zHeight, xTileOffset, yTileOffset)
-                dirt:add(xC, yC, z, zHeight, xTileOffset, yTileOffset)
+                dirt:add(xC, yC, z, screenX, screenY)
                 if tile % 2 == 1 then
-                    -- Water layer for wet (odd) stages
-                    crop:add(xC, yC, z, zHeight, xTileOffset, yTileOffset, cameraX, cameraY, 70)
+                    -- Wet-soil overlay for watered (odd) stages, drawn under the plant.
+                    special[#special + 1] = { sortY = screenY + 23, sortX = screenX, type = "crop",
+                        args = {xC, yC, z, screenX, screenY, 70} }
                 end
-                -- Crop/plant layer
-                crop:add(xC, yC, z, zHeight, xTileOffset, yTileOffset, cameraX, cameraY, tile)            
+                special[#special + 1] = { sortY = screenY + 24, sortX = screenX, type = "crop",
+                    args = {xC, yC, z, screenX, screenY, tile} }
             elseif tile == 512 then
-                grass:add(xC, yC, z, zHeight, xTileOffset, yTileOffset)
-                tree:add(xC, yC, z, zHeight, xTileOffset, yTileOffset, cameraX, cameraY)
+                special[#special + 1] = { sortY = screenY + 26, sortX = screenX, type = "tree",
+                    args = {xC, yC, z, screenX, screenY} }
             end
             ::continueX::
         end
 
-        -- Draw objects behind the player
-        for _, obj in ipairs(object.objects) do
-            local objectRow = math.floor((obj.y) / sprites.size)
-            if objectRow == yC and obj.y <= player.y then
-                object:drawSingle(obj, cameraX, cameraY)
-            end
-        end
-
-        -- Draw player
-        local characterRow = math.floor(player.y / sprites.size) + 1
-        if characterRow == yC then
-            drawTreeBatches(cameraX, cameraY)
-            drawCropBatches(cameraX, cameraY)
+        -- Cliffs in this row hide anything already drawn behind them.
+        -- (Objects in this same row are drawn after this, so stay in front.)
+        if occluderCount > 0 then
             love.graphics.setCanvas(canvas.object)
-            player:draw(cameraX, cameraY, alpha)
+            love.graphics.setBlendMode("replace")
+            love.graphics.setColor(0, 0, 0, 0)
+            for i = 1, occluderCount do
+                local r = occluders[i]
+                love.graphics.rectangle("fill", r[1], r[2], r[3], r[4])
+            end
+            love.graphics.setBlendMode("alpha")
+            love.graphics.setColor(1, 1, 1, 1)
         end
 
-        -- Draw objects in front of the player
-        for _, obj in ipairs(object.objects) do
-            local objectRow = math.floor((obj.y) / sprites.size)
-            if objectRow == yC and obj.y > player.y then
-                object:drawSingle(obj, cameraX, cameraY)
-            end
+        -- The player belongs to the row his feet are in.
+        if math.floor(player.y / ts) + 1 == yC then
+            special[#special + 1] = { sortY = player.y - cameraY, sortX = player.x - cameraX,
+                type = "player", args = {cameraX, cameraY, alpha} }
         end
+
+        table.sort(special, bySortKey)
+        for _, item in ipairs(special) do
+            drawSpecial(item)
+        end
+
         ::continueY::
     end
 
-    drawTreeBatches(cameraX, cameraY)
-    drawCropBatches(cameraX, cameraY)
+    -- 3. Every queued sprite shadow in one pass.
+    spriteShadow:flush(lighting.sun, lighting.lamp, cameraX, cameraY)
 
-    local lutNew = 96
-    local lutOld = 0
-    local normalizedAngle = shadow.angle % 360 / 80
-    if (shadow.angle % 360 >= 0 and shadow.angle % 360 <= 80) then
-        normalizedAngle = shadow.angle % 360 / 80.0
-        lutNew = 96.0
-        lutOld = 0
-    elseif (shadow.angle % 360 >= 80 and shadow.angle <= 100) then
-        normalizedAngle = shadow.angle % 360 / 90.0
-        lutNew = 0
-        lutOld = 0
-    elseif (shadow.angle % 360 > 100 and shadow.angle % 360 <= 180) then
-        normalizedAngle = (shadow.angle % 360 - 100.0) / 80.0
-        lutNew = 0
-        lutOld = 32.0
-    elseif (shadow.angle % 360 > 180 and shadow.angle % 360 <= 260) then
-        normalizedAngle = (shadow.angle % 360 - 180.0) / 80.0
-        lutNew = 32.0
-        lutOld = 63.0
-    elseif (shadow.angle % 360 > 260 and shadow.angle % 360 <= 280) then
-        normalizedAngle = (shadow.angle % 360 - 180.0) / 90.0
-        lutNew = 63.0
-        lutOld = 63.0
-    elseif (shadow.angle % 360 > 280 and shadow.angle % 360 <= 360) then
-        normalizedAngle = (shadow.angle % 360 - 280.0) / 80.0
-        lutNew = 63.0
-        lutOld = 96.0
-    end
-
+    -- 4. Ground tiles.
     love.graphics.setCanvas(canvas.offscreen)
     love.graphics.draw(sprites.tileBatch)
-    
-    -- Draw outline around adjacent tile based on player direction
     player:drawOutline(cameraX, cameraY, mapArray)
 
-    if canvas.showColorMap then
-        love.graphics.draw(canvas.colorMap)
+    -- 5. Lighting, shadows and colour grading.
+    lighting:composite(cameraX, cameraY)
+
+    -- Debug (C key): overlay the surface map.
+    if canvas.showSurfaceMap then
+        love.graphics.setShader(shader.surfaceDebug)
+        shader.surfaceDebug:send("heightRange", terrain.heightRange)
+        shader.surfaceDebug:send("maxTerrainHeight", terrain.maxHeight)
+        love.graphics.draw(canvas.surface)
+        love.graphics.setShader()
     end
 
-    love.graphics.setCanvas(canvas.intermediate)
-    shader.ultimate:send("objectCanvas", canvas.object)
-    shader.ultimate:send("shadowCanvas", canvas.shadow)
-    shader.ultimate:send("colorMapCanvas", canvas.colorMap)
-    shader.ultimate:send("lutImage", sprites.lut)
-    shader.ultimate:send("shadowAngle", shadow.angle)
-    shader.ultimate:send("shadowSize", shadow.size)
-    shader.ultimate:send("shadowAlpha", 0.5 * (1 - math.abs((shadow.angle - 360) % 360 - 90) / 90)^2)    
-    shader.ultimate:send("lutOld", lutOld)
-    shader.ultimate:send("lutNew", lutNew)
-    shader.ultimate:send("spotlight", {player.x + 8 - cameraX, player.y - cameraY + player.z / 2})
-    shader.ultimate:send("canvasSize", {window.width, window.height})
-    shader.ultimate:send("normalizedAngle", normalizedAngle)
-    love.graphics.setShader(shader.ultimate)
-    love.graphics.draw(canvas.offscreen, 0, 0, 0, 1, 1)
-
-    love.graphics.setCanvas()
-    love.graphics.setShader()
-    love.graphics.draw(canvas.intermediate, scaleOffsetX, scaleOffsetY, 0, scaleFactor, scaleFactor)
+    -- 6. Scale up to the window (crisp, see view.lua).
+    view:present(appWidth, appHeight)
 
     -- Draw inventory UI if not showing message box
     if not message.isActive then
@@ -273,98 +277,17 @@ function love.draw()
     -- Draw message box
     message:draw(appWidth, appHeight)
 
+    -- Debug readout
     love.graphics.setColor(1, 1, 1, 1)
-    love.graphics.setFont(love.graphics.newFont(12))
+    love.graphics.setFont(debugFontSmall)
     local stats = love.graphics.getStats()
     love.graphics.print("Player Z: " .. player.z, 10, 10)
     love.graphics.print("IsOnGround: " .. tostring(player.isOnGround), 10, 30)
     love.graphics.print("Player Jump: " .. tostring(player.jump), 10, 50)
-    love.graphics.print("Shadow Angle: " .. shadow.angle, 10, 70)
+    love.graphics.print(string.format("Sun Angle: %.1f", sun.angle), 10, 70)
     love.graphics.print("Draw Calls: " .. stats.drawcalls, 10, 90)
     love.graphics.print("Canvas Switches: " .. stats.canvasswitches, 10, 110)
-    love.graphics.setFont(love.graphics.newFont(32))
+    love.graphics.print(string.format("Zoom: %.2fx  (view %dx%d)", view.displayZoom, window.width, window.height), 10, 130)
+    love.graphics.setFont(debugFontLarge)
     love.graphics.print("FPS: " .. love.timer.getFPS(), 10, 150)
-end
-
-function updateDimensions()
-    local scaleX = appWidth / window.width
-    local scaleY = appHeight / window.height
-    scaleFactor = math.max(scaleX, scaleY)
-    scaleOffsetX = (appWidth - (window.width * scaleFactor)) / 2
-    scaleOffsetY = (appHeight - (window.height * scaleFactor)) / 2
-    shadow.frame = 0
-end
-
-function drawTreeBatches(cameraX, cameraY)
-    if sprites.treeBatch:getCount() > 0 then
-        love.graphics.setCanvas(canvas.object)
-        love.graphics.draw(sprites.treeBatch)
-        sprites.treeBatch:clear()
-    end
-    if shadow.frame == shadow.frequency and sprites.treeShadowBatch:getCount() > 0 then
-        love.graphics.setCanvas(canvas.shadow)
-        love.graphics.setShader(shader.sprite)
-        love.graphics.setBlendMode('lighten', 'premultiplied')
-        shader.sprite:send("divideBy", 2)
-        shader.sprite:send("angle", shadow.angle)
-        shader.sprite:send("colorMapCanvas", canvas.colorMap)
-        shader.sprite:send("spriteHeight", 480.0)   --SpriteMap Height
-        shader.sprite:send("spriteWidth", 1440.0)   --SpriteMap Width
-        shader.sprite:send("spriteBase", 250)
-        shader.sprite:send("xstart", 100)
-        shader.sprite:send("xend", 320)
-        shader.sprite:send("shadowSize", 250)
-        shader.sprite:send("opacity", 1.0)
-        shader.sprite:send("canvasSize", {800, 600})
-        shader.sprite:send("spotlight", {player.x + 8 - cameraX, player.y - cameraY + player.z / 2})
-        if (shadow.angle % 360 > 180 and shadow.angle % 360 < 360) then
-            shader.sprite:send("noSunShadows", 1.0)
-        else
-            shader.sprite:send("noSunShadows", 0.0)
-        end
-        shader.sprite:send("showSpotlight", 1)
-        love.graphics.draw(sprites.treeShadowBatch)
-        love.graphics.setBlendMode('alpha')
-        love.graphics.setShader()
-        sprites.treeShadowBatch:clear()
-    end
-end
-
-function drawCropBatches(cameraX, cameraY)
-    if sprites.cropBatch:getCount() > 0 then
-        love.graphics.setCanvas(canvas.object)
-        love.graphics.draw(sprites.cropBatch)
-        sprites.cropBatch:clear()
-    end
-    if shadow.frame == shadow.frequency and sprites.cropShadowBatch:getCount() > 0 then
-        love.graphics.setCanvas(canvas.shadow)
-        love.graphics.setShader(shader.spriteTest)
-        love.graphics.setBlendMode('lighten', 'premultiplied')
-
-        shader.spriteTest:send("angle", shadow.angle)
-        
-        -- shader.sprite:send("divideBy", 1)
-        -- shader.sprite:send("angle", shadow.angle)
-        -- shader.sprite:send("colorMapCanvas", canvas.colorMap)
-        -- shader.sprite:send("spriteHeight", 352.0) -- Adjust based on your crop sprite height
-        -- shader.sprite:send("spriteWidth", 640.0) -- Adjust based on your crop sprite width
-        -- shader.sprite:send("spriteBase", 240.0) -- Adjust base for shadow projection
-        -- shader.sprite:send("xstart", 5)
-        -- shader.sprite:send("xend", 27)
-        -- shader.sprite:send("shadowSize", 200) -- Adjust shadow length
-        -- shader.sprite:send("opacity", 1.0)
-        -- shader.sprite:send("canvasSize", {800, 600})
-        -- shader.sprite:send("spotlight", {player.x + 8 - cameraX, player.y - cameraY + player.z / 2})
-        -- if (shadow.angle % 360 > 180 and shadow.angle % 360 < 360) then
-        --     shader.sprite:send("noSunShadows", 1.0)
-        -- else
-        --     shader.sprite:send("noSunShadows", 0.0)
-        -- end
-        -- shader.sprite:send("showSpotlight", 1)
-        
-        love.graphics.draw(sprites.cropShadowBatch)
-        love.graphics.setBlendMode('alpha')
-        love.graphics.setShader()
-        sprites.cropShadowBatch:clear()
-    end
 end

@@ -1,138 +1,121 @@
-//extern Image offscreenCanvas;         //Canvas for grass, dirt, etc.
-extern Image objectCanvas;              //Canvas of Players, NPCs, Objects
-extern Image shadowCanvas;              //Canvas of Shadows for Objects (not tile content)
-extern Image colorMapCanvas;            //Canvas of Color Map
-extern Image lutImage;                  //LUT tables (noon, dusk, midnight, dawn, lighting)
-extern float shadowAngle;               //Angle of shadow
-extern float shadowSize;                //Length of shadow  
-extern float shadowAlpha;               //Transparency of shadows         
-extern float lutOld;                    //Old LUT y value
-extern float lutNew;                    //New LUT y value
-extern vec2 spotlight;                  //Spotlight {x,y}
-extern vec4 spotlightColor;             //Spotlight Color vec4
-extern vec2 canvasSize;                 //Canvas sizes for all canvas.
-extern float normalizedAngle;           //Normalized Angle for LUT mixing
-float noSpotlight = 0;                  //Set if no spotlight for pixel should be rendered
-float noShadows = 0;                    //Set if you want no shadows at all
-const float PI = 3.14159265359;
-float rad = shadowAngle * PI / 180.0;
-float angle = mod(shadowAngle, 360.0);
-bool inSpotlight = true;
-vec2 angleMove = vec2(cos(rad) / canvasSize.x, sin(rad) / canvasSize.y);
-vec4 currentPixel;
-vec2 normalizedSpotlight = spotlight / canvasSize;
+// ultimateShader.glsl  —  final compositing / lighting pass
+//
+// (terrainCommon.glsl is prepended to this file by src/shader.lua.)
+//
+// Drawn once per frame: canvas.offscreen (ground tiles) -> canvas.intermediate.
+// For every screen pixel it:
+//
+//   1. Layers the object canvas (player, trees, crops) over the ground tiles.
+//   2. For terrain pixels (anything not fully covered by an opaque object):
+//        a. brightens higher ground slightly,
+//        b. lights cliff faces by the sun's direction (faceLight),
+//        c. darkens it if it's in shadow, either from a sprite (shadowCanvas.r)
+//           or from terrain (ray-marched through the heightMap),
+//        d. works out whether the player's lamp reaches it.
+//      Opaque object pixels were already tinted for shadow on the CPU
+//      (see lighting:objectTint), so they skip this.
+//   3. Applies the time-of-day colour grade (LUT), except inside the lamp's
+//      glow, where the ungraded colour shows through.
 
-vec4 effect(vec4 color, Image texture, vec2 textureCoords, vec2 screenCoords) {
-    //Calculate the distance to the center of spotlight
-    number dist = distance(textureCoords, normalizedSpotlight);
-    
-    vec4 objectPixel = Texel(objectCanvas,textureCoords);
-    if (objectPixel.a != 1.0) {                                                             //If objectCanvas is not semi-transparent or empty...
-        vec4 offscreenPixel = Texel(texture, textureCoords);                                //Let's check ground tiles..
-        currentPixel = mix(offscreenPixel, objectPixel, objectPixel.a);                     //Object and Offscreen Pixel Combination is sufficient
-        vec4 colorMapPixelOriginal = Texel(colorMapCanvas, textureCoords);                  //Let's get the colorMap data
-        if (colorMapPixelOriginal.b > 0.0) {
-            float brightnessFactor = colorMapPixelOriginal.b; // Elevation-based brightness factor
-            currentPixel.rgb *= mix(1.0, 1.5, brightnessFactor); // Scale the RGB values up to brighten without washing out
-        }                                                                  
-        if (noShadows == 0.0) {                                                             //If we're checking for shadows...
-            vec4 shadowPixel = Texel(shadowCanvas, textureCoords);                          //Check whether pixel coordinate has shadow...}            
-            if (shadowPixel.r > 0.0) {
-                inSpotlight = false;
-                shadowPixel.r = 0.0;
-                if (shadowPixel.b == 0.0) shadowPixel.a = 0.0;
-            }
-            if (shadowPixel.a != 1.0 && angle < 180 && angle > 0) {                         //If shadow is transparent or semi-transparent
-                vec4 colorMapPixelOriginal = Texel(colorMapCanvas, textureCoords);
-                vec2 pos = textureCoords;
-                for (int i=0; i <= shadowSize; i++) {                                       //Shadow cast from sun
-                    pos += angleMove;
-                    vec4 colorMapPixel = Texel(colorMapCanvas, pos);
-                    if (colorMapPixelOriginal.r != 1.0 && colorMapPixel.g != 0.0 && colorMapPixel.b > colorMapPixelOriginal.b) {    
-                        shadowPixel = vec4(0.0,0.0,0.0,1.0);
-                        //vec4 shadowedOffscreenPixel = mix(offscreenPixel, shadowPixel, shadowPixel.a);
-                        //currentPixel = mix(shadowedOffscreenPixel, objectPixel, objectPixel.a);
-                        break;
-                    }               
-                }
-            }
-            if (shadowPixel.a != 0.0 && angle < 180 && angle > 0) {                        //Mix shadow, grass, & partially transparent object pixel together, if needed
-                currentPixel.rgb *= mix(1.0, 0.01, shadowPixel.a * shadowAlpha);
-                //vec4 shadowedOffscreenPixel = mix(offscreenPixel, shadowPixel, shadowPixel.a * shadowAlpha);
-                //currentPixel = mix(shadowedOffscreenPixel, objectPixel, objectPixel.a);
-            }
-        }
-        if (noSpotlight != 1.0) {                                                           //Let's do spotlight shadows now
-            vec2 pos = textureCoords;
-            vec2 direction = normalize(normalizedSpotlight - textureCoords);
-            vec4 shadow_pixel = Texel(colorMapCanvas, pos);
-            vec4 colorMapPixelOriginal = shadow_pixel;
-            float stepSize = 1.0 / shadowSize / 20;                                         //Dividing by 20 makes the shadow really straight. 
-            if (shadow_pixel.r == 1.0) {                                                    //If on pillar, light shows up in front but not behind. 
-                while (shadow_pixel.r == 1.0 && pos.y <= normalizedSpotlight.y) {           //Go down pillar until we find base of pillar or until below player 
-                    pos.y += stepSize;
-                    shadow_pixel = Texel(colorMapCanvas, pos);
-                }
-                if (pos.y > normalizedSpotlight.y) inSpotlight = false;
-            } else if (shadow_pixel.b > 0.0) {
-                inSpotlight = false;
-            } else {
-                for (int i = 0; i <= shadowSize*3; i++) {
-                    pos += direction * stepSize;
-                    shadow_pixel = Texel(colorMapCanvas, pos); //shadow_coords
-                    float distToOccluder = distance(pos, textureCoords);
-                    if (shadow_pixel.r == 1.0 && shadow_pixel.g == 1.0 
-                    && shadow_pixel.b > colorMapPixelOriginal.b 
-                    && shadow_pixel.b <= colorMapPixelOriginal.b + 0.15 
-                    && dist > distToOccluder) {    
-                        inSpotlight = false;//return vec4(0.0, 0.0, 0.3, 1.0); // red color
-                        break;
-                    }
-                }
-            }
-        }
-    } else {
-        currentPixel = objectPixel;
+uniform Image objectCanvas;      // sprites; alpha 1 = fully covers the ground
+uniform Image shadowCanvas;      // sprite shadows: R = sun shadow, G = lamp shadow
+
+// Sun (see sun:getState)
+uniform vec2  sunDir;            // ground-plane direction toward the sun
+uniform float sunSlope;          // tan(altitude)
+uniform float litLevel;          // brightness of sunlit pixels (ambient + direct sun)
+uniform float shadowLevel;       // brightness of shadowed pixels (ambient only)
+uniform float faceLight;         // brightness multiplier for cliff faces
+
+// Lamp (point light carried by the player)
+uniform vec3  lampPos;           // world x, y, height
+uniform vec2  lampScreen;        // lamp position on screen (for sprite pixels)
+uniform float lampRadius;
+
+// Colour grading LUT: 32 blue slices of 32x32 (red across, green up), and
+// several 32-row blocks stacked vertically for different times of day.
+uniform Image lutImage;
+uniform vec2  lutSize;           // (1024, 128)
+uniform float lutRowA;           // first row of the "from" block
+uniform float lutRowB;           // first row of the "to" block
+uniform float lutMix;            // 0 = all A, 1 = all B
+
+const float LAMP_STEP  = 2.0;
+const int   LAMP_STEPS = 80;     // enough to cover lampRadius / LAMP_STEP
+
+// Elevation brightening: +1 % per 6.4 px of height (a 5-tile cliff top is +25 %).
+const float ELEVATION_BRIGHTEN = 1.0 / 640.0;
+
+// Is there a clear line of sight from p to the lamp?
+bool lampVisible(vec3 p) {
+    vec3 toLamp = lampPos - p;
+    float dist = length(toLamp.xy);
+    if (dist < 1.0) return true;
+    vec2 dir = toLamp.xy / dist;
+    float slope = toLamp.z / dist;
+    for (int i = 1; i <= LAMP_STEPS; i++) {
+        float d = float(i) * LAMP_STEP;
+        if (d >= dist) break;
+        // +0.5 so a ray grazing along a flat top doesn't hit its own tile
+        if (terrainHeightAt(p.xy + dir * d) > p.z + d * slope + 0.5) return false;
     }
-
-    //LUT Time
-    vec3 normalizedColor = currentPixel.rgb * 31.0;                                         //Normalize the colors 0 - 31 (32 values)
-
-    // Calculate the LUT image coordinates
-    vec2 lutCoords1;                        
-    vec2 lutCoords2;
-
-    normalizedColor.b = floor(normalizedColor.b);                                           //Blue value needs to be integer, or weird stuff happens
-
-    lutCoords1.x = (normalizedColor.b * 32.0 + normalizedColor.r) / 1023.0;                 
-    lutCoords1.y = (lutNew + 31.0 - normalizedColor.g + 0.5) / 127.0;
-    lutCoords2.x = (normalizedColor.b * 32.0 + normalizedColor.r) / 1023.0;
-    lutCoords2.y = (lutOld + 31.0 - normalizedColor.g + 0.5) / 127.0;
-
-    // Sample the LUT image
-    vec4 lutColor1 = Texel(lutImage, lutCoords1);
-    vec4 lutColor2 = Texel(lutImage, lutCoords2);
-
-    // Interpolate between lutColor1 and lutColor2 based on normalized angle
-    vec4 outputColor = mix(lutColor1, lutColor2, normalizedAngle);
-
-    // Return the color from the LUT image
-    //return outputColor;
-
-
-    //SPOTLIGHT CODE 
-    //Normalize the distance based on the radius
-    float radius = 100.0;
-    float theDistance = distance(screenCoords, spotlight);
-
-    float normalizedDist = clamp(theDistance / radius, 0.0, 1.0);
-
-    //number t = clamp(dist / radius, 0.0, 1.0);
-
-    //Interpolate between the two colors based on the normalized distance 
-    vec4 finalColor = mix(currentPixel, outputColor, normalizedDist);
-    return mix(outputColor, finalColor, float(inSpotlight));
-
-
+    return true;
 }
 
+// Looks a colour up in one LUT block.
+vec4 lutSample(vec3 idx, float blockRow) {
+    vec2 uv = vec2((idx.b * 32.0 + idx.r + 0.5) / lutSize.x,
+                   (blockRow + 31.0 - idx.g + 0.5) / lutSize.y);
+    return Texel(lutImage, uv);
+}
+
+vec4 colourGrade(vec4 c) {
+    vec3 idx = floor(clamp(c.rgb, 0.0, 1.0) * 31.0 + 0.5);  // 0..31 per channel
+    vec4 graded = mix(lutSample(idx, lutRowA), lutSample(idx, lutRowB), lutMix);
+    return vec4(graded.rgb, c.a);
+}
+
+vec4 effect(vec4 color, Image texture, vec2 uv, vec2 screenPx) {
+    vec4 objectPixel = Texel(objectCanvas, uv);
+    vec4 pixel;
+    bool inLamp;
+    float lampDist;
+
+    if (objectPixel.a < 1.0) {
+        // ---- Terrain (possibly under a semi-transparent sprite edge) ----
+        pixel = mix(Texel(texture, uv), objectPixel, objectPixel.a);
+
+        bool isFace;
+        vec3 p = surfacePoint(screenPx, isFace);
+
+        pixel.rgb *= 1.0 + p.z * ELEVATION_BRIGHTEN;
+        if (isFace) pixel.rgb *= faceLight;
+
+        vec4 spriteShadow = Texel(shadowCanvas, uv);
+
+        // How much direct sun is blocked here (0 = fully lit, 1 = fully shadowed).
+        // Only worth computing while there is direct sun to block.
+        float shade = 0.0;
+        if (litLevel > shadowLevel) {
+            shade = spriteShadow.r;
+            if (shade < 1.0) shade = max(shade, terrainShadow(p, sunDir, sunSlope, isFace));
+        }
+        pixel.rgb *= mix(litLevel, shadowLevel, shade);
+
+        // Only bother tracing toward the lamp inside its radius.
+        lampDist = length(p.xy - lampPos.xy);
+        inLamp = lampDist < lampRadius && spriteShadow.g == 0.0 && lampVisible(p);
+    } else {
+        // ---- Opaque sprite: already shadow-tinted on the CPU ----
+        pixel = objectPixel;
+        lampDist = distance(screenPx, lampScreen);
+        inLamp = true;
+    }
+
+    vec4 graded = colourGrade(pixel);
+    if (!inLamp) return graded;
+
+    // Inside the lamp: fade from the true colour at the centre to the graded
+    // colour at the edge of the radius.
+    return mix(pixel, graded, clamp(lampDist / lampRadius, 0.0, 1.0));
+}

@@ -8,24 +8,29 @@ function requireAll()
         print("Error loading src/toolbarMap: ", result)
     end
 
-    require("src/window")   -- Handles window-related configurations (e.g., window dimensions, scaling)
-    require("src/canvas")   -- Handles canvas management (e.g., creating and managing drawing surfaces for various game elements)
-    require("src/player")   -- Player object and related functions (e.g., movement, animations, states)
-    require("src/shader")   -- Loads all shaders (e.g., gradient, lighting, shadow, etc.)
-    require("src/shadow")   -- Shadow object and related functions (e.g., shadow angle, size, frequency)
-    require("src/sprites")  -- Loads and organizes all sprite images and quads (e.g., hero, grass, trees, etc.)
-    require("src/mountain") -- Mountain object and related functions (e.g., drawing mountain tiles, handling elevation)
-    require("src/tree")     -- Tree object and related functions (e.g., drawing tree tiles, handling elevation)
-    require("src/crop")
-    require("src/grass")    -- Grass object and related functions (e.g., drawing grass tiles, handling elevation)
-    require("src/tallgrass") -- Tall grass object and related functions
-    require("src/dirt")     -- Dirt object and related functions (e.g., drawing plowed dirt tiles)
-    require("src/ui")       -- UI elements (e.g., inventory)
-    require("src/sounds")   -- Loading sounds
-    require("src/objects")
-    require("src/message")
-    require("src/map")
+    require("src/window")       -- Game view size (window.width/height) and scaling
+    require("src/canvas")       -- Off-screen render targets
+    require("src/view")         -- Zoom levels and scaling the frame to the window
+    require("src/player")       -- Player movement, animation, tools
+    require("src/shader")       -- Compiles all shaders
+    require("src/sun")          -- Time of day: sun direction, shadow length/strength, LUT blend
+    require("src/sprites")      -- Images, quads and the tile sprite batch
+    require("src/terrain")      -- Heightmap + surface map used for lighting and shadows
+    require("src/spriteShadow") -- Queues and renders shadows cast by sprites
+    require("src/lighting")     -- Lamp state and the final lighting/composite pass
+    require("src/mountain")     -- Cliff-face tile sprites
+    require("src/tree")         -- Trees (draw + shadow)
+    require("src/crop")         -- Crops (draw + shadow)
+    require("src/grass")        -- Grass tiles and decorations
+    require("src/tallgrass")    -- Tall grass
+    require("src/dirt")         -- Plowed dirt tiles
+    require("src/ui")           -- UI elements (e.g., inventory)
+    require("src/sounds")       -- Loading sounds
+    require("src/objects")      -- Collectible Bible pages
+    require("src/message")      -- Message box
+    require("src/map")          -- xorshift16 used for crop growth
 
-    -- Initialize the canvas after requiring window and canvas
     canvas:initialize(window.width, window.height)
+    terrain:build(mapArray)
+    grass:buildFlourishes()
 end

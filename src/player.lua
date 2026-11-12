@@ -1,4 +1,13 @@
 -- player.lua
+--
+-- The player character: movement, jumping, tool use (hoe, seeds, watering
+-- can), picking up Bible pages, and drawing.
+--
+-- Position: player.x / player.y are world pixels. player.y is where his feet
+-- are; the collision box spans x .. x+32 and y-8 .. y.
+-- Height uses the map's convention: player.z is NEGATIVE going up (0 =
+-- ground level, -32 = one tile up). player.shadowZ is the z of the ground
+-- under him, so (shadowZ - z) is how high he is jumping.
 
 player = {}
 
@@ -17,8 +26,8 @@ end
 
 -- Initial properties
 player.x, player.y, player.z, player.shadowZ = 100, 250, 0, 0
-player.ax, player.ay, player.az = 0, 0, 0
-player.vx, player.vy, player.vz = 0, 0, 0
+player.ax, player.ay, player.az = 0, 0, 0   -- acceleration this tick (from input)
+player.vx, player.vy, player.vz = 0, 0, 0   -- velocity (vz < 0 = rising)
 player.friction, player.speed, player.zSpeed, player.speedLimit = 0.99, 10, 0.5, 4
 player.jump = false
 player.jumpForce = -13
@@ -43,6 +52,18 @@ player.animations = {
 
 local toolbarMapErrorPrinted = false
 
+-- Collision box, relative to (player.x, player.y). 24 px wide to match his
+-- body (his side-on body is 23 px wide), centred on x + 16 like the sprite.
+-- 8 px tall at his feet.
+local BOX_LEFT, BOX_RIGHT = 4, 27
+local BOX_TOP, BOX_BOTTOM = -8, 0
+
+-- Column of the 112 px side-facing (Left/Right) frames where his body is
+-- centred (body spans columns 41-63). See player:draw.
+local SIDE_BODY_CENTRE = 52
+
+-- The tile (col, row) directly in front of the player, i.e. the one his
+-- tools act on.
 function player:getTargetTile()
     local playerTileX = math.floor((self.x + 16) / sprites.size) + 1
     local playerTileY = math.floor(self.y / sprites.size) + 1
@@ -54,6 +75,9 @@ function player:getTargetTile()
     return playerTileX + dx, playerTileY + dy
 end
 
+-- Called each time a tool animation advances a frame. On the animation's
+-- trigger frame (e.g. the hoe hitting the ground) it changes the target tile
+-- once: plow grass -> dirt, sow dirt -> seeds, or water dry -> wet.
 function player:handleToolAnimation(state, frame, numFrames)
     local anim = self.animations[state]
     if not anim then return end
@@ -77,6 +101,8 @@ function player:handleToolAnimation(state, frame, numFrames)
     end
 end
 
+-- Ends a tool animation and returns to standing. Finishing a pickup opens
+-- the message box with the page's verse.
 function player:resetToolState(state)
     local anim = self.animations[state]
     if anim then
@@ -92,6 +118,8 @@ function player:resetToolState(state)
     end
 end
 
+-- Fixed-timestep update: animation frames, tool animations, arrow-key
+-- movement, jumping and gravity.
 function player:update(dt)
     if message.isActive then return end
     local prevState, prevDir = self.state, self.direction
@@ -172,7 +200,17 @@ function player:update(dt)
     self.vx = math.max(-self.speedLimit, math.min(self.vx, self.speedLimit))
     self.vy = math.max(-self.speedLimit, math.min(self.vy, self.speedLimit))
 
+    local beforeX, beforeY = self.x, self.y
     self:moveCharacter(self.vx, self.vy, self.vz * 20 * dt)
+
+    -- Pushing against a wall: stand still instead of walking on the spot
+    -- (the walking stride would poke his foot into the wall). The 1 px
+    -- check also ignores ticks where velocity is still too small to move.
+    if self.state == "Walking" and self.x == beforeX and self.y == beforeY
+       and not self:canMoveTo(self.x + (self.ax > 0 and 1 or self.ax < 0 and -1 or 0),
+                              self.y + (self.ay > 0 and 1 or self.ay < 0 and -1 or 0), self.z) then
+        self.state = "Standing"
+    end
 
     if self.state ~= prevState or self.direction ~= prevDir then
         self.frame = 1
@@ -180,6 +218,8 @@ function player:update(dt)
     end
 end
 
+-- Space starts a jump wind-up; F uses the selected tool, or picks up a
+-- Bible page if one is highlighted in front of the player.
 function player:keypressed(key)
     if key == "space" and self.isOnGround then
         self.state = "Jumping-Start"
@@ -261,48 +301,63 @@ function player:keypressed(key)
     end
 end
 
+-- Releasing space launches the jump (applied in player:update).
 function player:keyreleased(key)
     if key == "space" and not self.jump and self.isOnGround then
         self.jump = true
     end
 end
 
+-- Applies one tick of movement. Each axis (x, then y, then z) moves on its
+-- own, one pixel at a time, and stops at the last free pixel. So:
+--   * walking into a cliff or tree puts him flush against it, no gap;
+--   * if one axis is blocked the others still move (he slides along walls);
+--   * landing on a ledge puts his feet exactly on top of it.
 function player:moveCharacter(dx, dy, dz)
-    local newx = math.floor(self.x + dx + 0.5)
-    local newy = math.floor(self.y + dy + 0.5)
-    local newz = math.floor(self.z + dz + 0.5)
-
-    local canMoveXY = self:canMoveTo(newx, newy, self.z)
-    local canMoveZ = self:canMoveTo(self.x, self.y, newz)
-
-    if canMoveXY then
-        self.x = newx
-        self.y = newy
-    else
-        self.vx = 0
-        self.vy = 0
-    end
-
-    if canMoveZ then
-        self.z = newz
-    else
+    if self:moveAxis("x", math.floor(self.x + dx + 0.5)) then self.vx = 0 end
+    if self:moveAxis("y", math.floor(self.y + dy + 0.5)) then self.vy = 0 end
+    if self:moveAxis("z", math.floor(self.z + dz + 0.5)) then
         self.vz = 0
         self.isOnGround = true
     end
+
+    -- Ground height under the middle of his feet (used for his shadow and jump height).
+    self.shadowZ = self:getTile(self.x + 16, self.y).z
 end
 
+-- Steps self[axis] toward `target` one pixel at a time until it arrives or
+-- the next pixel would collide. Returns true if it was blocked. Moves are at
+-- most a few pixels per tick, so this is only a handful of checks.
+function player:moveAxis(axis, target)
+    local step = (target > self[axis]) and 1 or -1
+    while self[axis] ~= target do
+        local x, y, z = self.x, self.y, self.z
+        if axis == "x" then x = x + step
+        elseif axis == "y" then y = y + step
+        else z = z + step end
+
+        if not self:canMoveTo(x, y, z) then
+            return true
+        end
+        self[axis] = self[axis] + step
+    end
+    return false
+end
+
+-- Can the player's collision box be at (newX, newY) at height newZ? Blocked
+-- by solid tiles (type > 500, e.g. trees) and by any tile taller than newZ.
+--
+-- See BOX_LEFT etc. at the top of this file for the box's size.
 function player:canMoveTo(newX, newY, newZ)
-    local left = newX 
-    local right = newX + 32
-    local top = newY - 8
-    local bottom = newY
+    local left = newX + BOX_LEFT
+    local right = newX + BOX_RIGHT
+    local top = newY + BOX_TOP
+    local bottom = newY + BOX_BOTTOM
 
     local topLeftTile = self:getTile(left, top)
     local topRightTile = self:getTile(right, top)
     local bottomLeftTile = self:getTile(left, bottom)
     local bottomRightTile = self:getTile(right, bottom)
-
-    self.shadowZ = bottomLeftTile.z
 
     if (topLeftTile.v > 500 or topRightTile.v > 500 or 
         bottomLeftTile.v > 500 or bottomRightTile.v > 500 or
@@ -314,15 +369,21 @@ function player:canMoveTo(newX, newY, newZ)
     return true
 end
 
+-- Tile type (v) and z at a world position. Off the map counts as an
+-- impassable wall (v = 9999) so the player can't walk off the edge (which
+-- used to crash with a nil index).
 function player:getTile(x, y)
     local tileX = math.floor(x / 32) + 1
     local tileY = math.floor(y / 32) + 1
-    return {
-        v = mapArray[tileY][tileX][1],
-        z = mapArray[tileY][tileX][2]
-    }
+    local cell = mapArray[tileY] and mapArray[tileY][tileX]
+    if not cell then
+        return { v = 9999, z = 0 }
+    end
+    return { v = cell[1], z = cell[2] }
 end
 
+-- Tool checks: each tool only works on the right tile type at the player's
+-- own height.
 function player:canPlow(tx, ty)
     if mapArray[ty] and mapArray[ty][tx] then
         local tile = mapArray[ty][tx]
@@ -347,6 +408,7 @@ function player:canWater(tx, ty)
     return false
 end
 
+-- Is a Bible page within 50 px and in the direction the player is facing?
 function player:canPickUp()
     for _, obj in ipairs(object.objects) do
         local dx = self.x - obj.x
@@ -369,39 +431,53 @@ function player:canPickUp()
     return false
 end
 
+-- Draws the player to canvas.object (tinted if he's standing in a cliff's
+-- shadow) and queues his shadow. Also draws the Bible page he's holding
+-- during a pickup.
 function player:draw(cameraX, cameraY)
     local characterScreenX = self.x - cameraX
     local characterScreenY = self.y - cameraY
     local flipX = self.direction == "Left" and -1 or 1
-    local flipOffsetX = self.direction == "Left" and 100 or 0
     local spriteNumber = spriteMap.Cody[self.state][self.direction].frames[self.frame].sprite
 
+    -- The current frame is first drawn into a 200x200 scratch canvas
+    -- (canvas.temp), which is then used both to draw the player and as the
+    -- silhouette for his shadow. Column 100 of canvas.temp lines up with the
+    -- middle of his collision box (world x + 16).
+    --
+    -- In the side-facing (Left/Right) frames his body isn't centred in the
+    -- 112 px frame: it spans columns 41-63, centre 52. So those frames are
+    -- placed with column 52 on canvas column 100, and "Left" mirrors around that
+    -- same column. That keeps his body inside his collision box facing either
+    -- way, with no jump when he turns. Up/Down frames are already centred
+    -- (column ~56).
+    local bodyCentre = (self.direction == "Left" or self.direction == "Right") and SIDE_BODY_CENTRE or 56
     love.graphics.setCanvas(canvas.temp)
-    love.graphics.draw(self.spriteSheet, self.quads[spriteNumber], 100 - 56, 100 - 56, 0, flipX, 1, flipOffsetX, 0)
+    -- Origin at the body centre, so flipping mirrors around it.
+    love.graphics.draw(self.spriteSheet, self.quads[spriteNumber], 100, 100 - 56, 0, flipX, 1, bodyCentre, 0)
 
-    if shadow.frame == shadow.frequency then
-        love.graphics.setShader(shader.sprite)
-        love.graphics.setBlendMode('alpha')
-        shader.sprite:send("angle", shadow.angle)
-        shader.sprite:send("colorMapCanvas", canvas.colorMap)
-        shader.sprite:send("spriteHeight", 200.0)
-        shader.sprite:send("spriteWidth", 200.0)
-        shader.sprite:send("spriteBase", ((200-112)/2+80))
-        shader.sprite:send("xstart", ((200-112)/2+30))
-        shader.sprite:send("xend", ((200-112)/2+80))
-        shader.sprite:send("shadowSize", 70.0)
-        shader.sprite:send("divideBy", -1*(self.z-self.shadowZ)/64 + 1.5)
-        shader.sprite:send("opacity", 1 - -1*(self.z-self.shadowZ)/5/64)
-        shader.sprite:send("canvasSize", {window.width, window.height})
-        shader.sprite:send("spotlight", {self.x + 8 - cameraX, self.y - cameraY + self.z/2})
-        shader.sprite:send("showSpotlight", 0)
-        love.graphics.setCanvas(canvas.shadow)
-        love.graphics.draw(canvas.temp, characterScreenX + 16 - 100, characterScreenY - 128 + self.shadowZ)
-        love.graphics.setShader()
-    end
+    -- In canvas.temp the feet are at row 124, centred on column 100.
+    local anchorX = 100
+    local flipOffsetX = 0   -- used by the pickup overlay below (always facing Down)
+    local anchorY = 124
+    local jumpHeight = self.shadowZ - self.z     -- px above the ground (z is negative-up)
 
+    spriteShadow:add{
+        image = canvas.temp,
+        quadX = 0, quadY = 0, quadW = 200, quadH = 200,
+        anchorX = anchorX, anchorY = anchorY,
+        worldX = self.x + 16 + (anchorX - 100),
+        worldY = self.y - 4,
+        worldZ = -self.shadowZ,
+        lift = jumpHeight,
+        opacity = 1 - jumpHeight / 320,          -- shadow fades the higher he jumps
+    }
+
+    local tint = lighting:objectTint(self.x + 16, self.y - 4, -self.z + 24)
     love.graphics.setCanvas(canvas.object)
+    love.graphics.setColor(tint, tint, tint, 1)
     love.graphics.draw(canvas.temp, characterScreenX + 16 - 100, characterScreenY - 128 + self.z)
+    love.graphics.setColor(1, 1, 1, 1)
 
     -- Draw Bible page in player's hands during PickUp animation or when message is active
     if self.state == "PickUp" or message.isActive then
@@ -443,6 +519,8 @@ function player:draw(cameraX, cameraY)
     end
 end
 
+-- Yellow box on the tile in front of the player when the selected tool can
+-- be used there.
 function player:drawOutline(cameraX, cameraY, mapArray)
     if self.isNearOutlinedObject then return end
 

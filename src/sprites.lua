@@ -4,16 +4,16 @@ sprites = {}
 -- Load images
 sprites.land = love.graphics.newImage("img/sprites2.png")
 sprites.crop = love.graphics.newImage("img/crop.png")
+-- All ground tiles for a frame (grass, dirt, cliff faces) go into this one
+-- batch and are drawn in a single call. Grows automatically if needed.
 sprites.tileBatch = love.graphics.newSpriteBatch(sprites.land, 1600)
 sprites.grass = love.graphics.newImage("img/grass3.png")
 sprites.tree = love.graphics.newImage("img/tree4.png")
-sprites.treeBatch = love.graphics.newSpriteBatch(sprites.tree, 200)
-sprites.cropBatch = love.graphics.newSpriteBatch(sprites.crop, 200)
-sprites.treeShadowBatch = love.graphics.newSpriteBatch(sprites.tree, 200)
-sprites.cropShadowBatch = love.graphics.newSpriteBatch(sprites.crop, 200)
-sprites.tallgrassBatch = love.graphics.newSpriteBatch(sprites.tree, 1600)
 sprites.grungeOverlay = love.graphics.newImage("img/grunge3.jpg")
+-- Colour-grading lookup table: four 32-row blocks (noon, dusk, night, dawn).
+-- Must be sampled exactly, never blurred.
 sprites.lut = love.graphics.newImage("img/LUD2.png")
+sprites.lut:setFilter("nearest", "nearest")
 sprites.toolbar = love.graphics.newImage("img/toolbar.png")
 sprites.objects = love.graphics.newImage("img/objects.png")
 sprites.parchment = love.graphics.newImage("img/parchment.png")
