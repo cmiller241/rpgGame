@@ -8,6 +8,10 @@ sprites.crop = love.graphics.newImage("img/crop.png")
 -- All ground tiles for a frame (grass, dirt, cliff faces) go into this one
 -- batch and are drawn in a single call. Grows automatically if needed.
 sprites.tileBatch = love.graphics.newSpriteBatch(sprites.land, 1600)
+-- While the player is down in a pit, the tiles at or below his level are
+-- also drawn into this batch, as a separate layer the lighting pass can
+-- show through higher ground (see lighting.lua, "pit focus").
+sprites.focusBatch = love.graphics.newSpriteBatch(sprites.land, 400)
 sprites.grass = love.graphics.newImage("img/grass3.png")
 sprites.tree = love.graphics.newImage("img/tree4.png")
 sprites.grungeOverlay = love.graphics.newImage("img/grunge3.jpg")

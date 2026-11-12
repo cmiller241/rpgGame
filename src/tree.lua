@@ -8,6 +8,7 @@ local tree = {}
 package.loaded[...] = tree  -- register now, so modules that require each other share this table
 
 local canvas = require("src.canvas")
+local player = require("src.player")
 local shader = require("src.shader")
 local spriteShadow = require("src.spriteShadow")
 local sprites = require("src.sprites")
@@ -27,6 +28,36 @@ local WIND_PX, WIND_SPEED = 5, 3.0
 local SWAY_ANCHOR_V = 0.55
 -- Height (px above the base) used to decide if a tree is in shadow: mid-canopy.
 local TINT_SAMPLE_HEIGHT = 110
+
+-- SEE-THROUGH TREES
+-- A tree in front of the player that overlaps him fades to FADE_ALPHA so
+-- you can see him (and the ground) behind it, easing in and out at
+-- FADE_SPEED (alpha per second). Its shadow is unaffected.
+tree.FADE_ALPHA = 1
+tree.FADE_SPEED = 4
+-- Rough screen-space extent of the canopy around the base point.
+local CANOPY_HALF_WIDTH, CANOPY_HEIGHT, CANOPY_BOTTOM = 76, 220, 0
+
+-- Current alpha of each tree that's fading, by tile ("col,row").
+local fade = {}
+
+-- Is this tree drawn in front of the player and covering part of him?
+local function coversPlayer(item)
+    local p, box = player.screenItem, player.screenBox
+    if not p or item.sortY <= p.sortY then return false end   -- behind him
+    return item.drawX + CANOPY_HALF_WIDTH > box.x0 and item.drawX - CANOPY_HALF_WIDTH < box.x1
+       and item.drawY - CANOPY_HEIGHT < box.y1 and item.drawY + CANOPY_BOTTOM > box.y0
+end
+
+-- Eases this tree's alpha toward its target and returns it.
+local function fadeAlpha(item)
+    local target = coversPlayer(item) and tree.FADE_ALPHA or 1
+    local a = fade[item.key] or 1
+    local step = tree.FADE_SPEED * love.timer.getDelta()
+    if a < target then a = math.min(target, a + step) else a = math.max(target, a - step) end
+    fade[item.key] = (a < 1) and a or nil       -- forget trees that are fully solid again
+    return a
+end
 
 -- Called while building the scene (see main.lua). Queues the tree's shadow
 -- and adds a draw item to `list`.
@@ -54,7 +85,7 @@ function tree:addSprites(list, kind, xC, yC, z, screenX, screenY)
     spriteShadow:add(caster)
 
     list[#list + 1] = {
-        owner = self, caster = caster, kind = k, swayPx = swayPx,
+        owner = self, caster = caster, kind = k, swayPx = swayPx, key = xC .. "," .. yC,
         sortY = screenY + BASE_IN_TILE_Y, sortX = screenX,
         drawX = screenX + BASE_IN_TILE_X, drawY = screenY + BASE_IN_TILE_Y + z,
         tintX = baseX, tintY = baseY, tintZ = baseZ + TINT_SAMPLE_HEIGHT,
@@ -74,7 +105,7 @@ function tree:drawItem(item, tint)
     s:send("quadV0", qy / texH)
     s:send("quadV1", (qy + qh) / texH)
     s:send("anchorV", SWAY_ANCHOR_V)
-    love.graphics.setColor(tint, tint, tint, 1)
+    love.graphics.setColor(tint, tint, tint, fadeAlpha(item))
     love.graphics.draw(sprites.tree, k.quad, item.drawX, item.drawY, 0, 1, 1, k.anchorX, k.anchorY)
     love.graphics.setColor(1, 1, 1, 1)
     love.graphics.setShader()

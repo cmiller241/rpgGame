@@ -22,13 +22,23 @@ local camera = require("src.camera")
 local canvas = require("src.canvas")
 local player = require("src.player")
 local sun = require("src.sun")
+local terrain = require("src.terrain")
 local view = require("src.view")
 
 devtools.hideOverlay = false   -- hides the debug text so screenshots are clean
 
 -- Edit freely. x/y are world pixels of the player's feet; z is his height
--- (negative = up, e.g. -32 for one tile); angle is sun.angle (0 = sunrise,
--- 90 = noon, 180 = sunset, 250 = night); zoom is a whole-number zoom level.
+-- (negative = up, e.g. -32 for one tile; positive = down in a pit); angle is
+-- sun.angle (0 = sunrise, 90 = noon, 180 = sunset, 250 = night); zoom is a
+-- whole-number zoom level. Optional `dig` reshapes tiles for that scene
+-- only: { {col, row, height}, ... } with height in px (negative = pit).
+
+-- Two pits in the open field east of the cliffs: one tile deep (cols 40-42)
+-- and two deep (cols 45-46), each two rows long.
+local PITS = {}
+for c = 40, 42 do for r = 12, 13 do PITS[#PITS + 1] = { c, r, -32 } end end
+for c = 45, 46 do for r = 12, 13 do PITS[#PITS + 1] = { c, r, -64 } end end
+
 local SCENES = {
     { name = "cliffs_morning",   angle = 40,  x = 560, y = 650, zoom = 2 },
     { name = "cliffs_noon",      angle = 90,  x = 560, y = 650, zoom = 2 },
@@ -44,12 +54,36 @@ local SCENES = {
     { name = "plateau_night",    angle = 250, x = 420, y = 570, z = -32, zoom = 3 },
     { name = "zoomed_in_4x",     angle = 120, x = 560, y = 650, zoom = 4 },
     { name = "surface_map",      angle = 60,  x = 560, y = 650, zoom = 2, surfaceMap = true },
+    { name = "pits_afternoon",   angle = 140, x = 1376, y = 360, zoom = 3, dig = PITS },
+    { name = "pits_morning",     angle = 40,  x = 1376, y = 360, zoom = 3, dig = PITS },
+    { name = "standing_in_pit",  angle = 110, x = 1280, y = 408, z = 32, zoom = 4, dig = PITS },
+    -- In the 2-deep pit: its floor is completely hidden by the rim normally,
+    -- so pit focus should reveal it.
+    { name = "in_deep_pit",      angle = 110, x = 1440, y = 408, z = 64, zoom = 4, dig = PITS },
+    { name = "pits_surface_map", angle = 110, x = 1376, y = 360, zoom = 3, dig = PITS, surfaceMap = true },
+    -- Player hidden behind things: the tree in front should fade, and the
+    -- cliff in front should show his ghost.
+    { name = "behind_tree",      angle = 110, x = 128,  y = 110, zoom = 3 },
+    { name = "behind_cliff",     angle = 110, x = 740,  y = 250, zoom = 3 },
 }
 
 local BENCH_SECONDS = 3
 
+-- Tiles reshaped by the current scene's `dig`, with their original heights.
+local undoDig = {}
+
 -- Puts the game into a scene's state.
 local function applyScene(s)
+    for i = #undoDig, 1, -1 do
+        local u = undoDig[i]
+        terrain:setTileHeight(u[1], u[2], u[3])
+        undoDig[i] = nil
+    end
+    for _, d in ipairs(s.dig or {}) do
+        undoDig[#undoDig + 1] = { d[1], d[2], terrain:heightAtTile(d[1], d[2]) }
+        terrain:setTileHeight(d[1], d[2], d[3])
+    end
+
     sun.angle = s.angle
     player:teleport(s.x, s.y, s.z or 0)
     view.zoom, view.displayZoom = s.zoom, s.zoom
@@ -80,6 +114,9 @@ end
 
 local function startShots(gameDraw)
     devtools.hideOverlay = true
+    -- Only a few frames per shot: make fades instant.
+    require("src.tree").FADE_SPEED = math.huge
+    require("src.lighting").focusFadeTime = 0
     local index, frame, shots = 1, 0, {}
 
     love.update = function() end   -- freeze the game

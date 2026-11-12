@@ -20,6 +20,7 @@ local sounds = require("src.sounds")
 local spriteMap = require("spritemap")
 local spriteShadow = require("src.spriteShadow")
 local sprites = require("src.sprites")
+local terrain = require("src.terrain")
 local tiles = require("src.tiles")
 local toolbarMap = require("src.toolbarMap")
 local ui = require("src.ui")
@@ -54,6 +55,8 @@ player.frame = 1
 player.frameTime = 0
 player.frameDuration = 0.2
 player.facingPage = nil      -- Bible page he could pick up right now (set in update)
+player.screenItem = nil      -- his draw item this frame (set in addSprites)
+player.screenBox = nil       -- his body's screen rectangle this frame (set in addSprites)
 
 -- Tool animation tracking
 player.animations = {
@@ -63,7 +66,6 @@ player.animations = {
     PickUp = { time = 0, done = false, frameTrigger = 3, canFunc = "canPickUp" }
 }
 
-local toolbarMapErrorPrinted = false
 
 -- Collision box, relative to (player.x, player.y). 24 px wide to match his
 -- body (his side-on body is 23 px wide), centred on x + 16 like the sprite.
@@ -203,11 +205,9 @@ function player:update(dt)
         self.isOnGround = false
     end
 
+    -- Gravity. (The ground stops him in moveCharacter, at whatever height
+    -- the tile under him is, including the floor of a pit.)
     self.vz = self.vz + self.gravity * self.gravityFactor * dt
-    if self.z > 0 then
-        self.z = 0
-        self.isOnGround = true
-    end
 
     self.vx = (self.vx + self.ax) * self.friction
     self.vy = (self.vy + self.ay) * self.friction
@@ -254,9 +254,8 @@ function player:keypressed(key)
             anim.time = 0
             anim.done = false
             sounds.play("sow")
-        elseif toolbarMap then
-            local slot = toolbarMap.slots[toolbarMap.visibleSlots[ui.highlightedSlot]]
-            local tool = slot.name
+        else
+            local tool = self:selectedTool()
             local tx, ty = self:getTargetTile()
 
             local function triggerTool(state, canFunc, sound)
@@ -277,12 +276,11 @@ function player:keypressed(key)
             elseif tool:find("Seed") then
                 triggerTool("Sowing", "canSow", "sow")
             end
-        else
-            if not toolbarMapErrorPrinted then
-                print("Error: toolbarMap is nil in player:keypressed")
-                toolbarMapErrorPrinted = true
-            end
         end
+    elseif key == "q" then
+        -- Shape the land with the Hoe: Q raises, Shift+Q lowers.
+        local lower = love.keyboard.isDown("lshift", "rshift")
+        self:shapeTerrain(lower and -1 or 1)
     end
 end
 
@@ -301,9 +299,12 @@ end
 function player:moveCharacter(dx, dy, dz)
     if self:moveAxis("x", math.floor(self.x + dx + 0.5)) then self.vx = 0 end
     if self:moveAxis("y", math.floor(self.y + dy + 0.5)) then self.vy = 0 end
+    local oldZ = self.z
     if self:moveAxis("z", math.floor(self.z + dz + 0.5)) then
         self.vz = 0
-        self.isOnGround = true
+        self.isOnGround = true            -- landed (or already standing)
+    elseif self.z > oldZ then
+        self.isOnGround = false           -- dropping: walked off a ledge or into a pit
     end
 
     -- Ground height under the middle of his feet (used for his shadow and jump height).
@@ -465,11 +466,20 @@ function player:addSprites(list, cameraX, cameraY)
     }
     spriteShadow:add(caster)
 
-    list[#list + 1] = {
+    local item = {
         owner = self, caster = caster,
         sortY = y - cameraY, sortX = x - cameraX,
         screenX = x - cameraX, screenY = y - cameraY, z = z,
         tintX = x + 16, tintY = y - 4, tintZ = -z + 24,
+    }
+    list[#list + 1] = item
+
+    -- Rough screen rectangle of his body (about 28 px wide, 80 tall above
+    -- his feet). Trees in front of him that overlap it fade out (tree.lua).
+    self.screenItem = item
+    self.screenBox = {
+        x0 = item.screenX + 2,  x1 = item.screenX + 30,
+        y0 = item.screenY + z - 80, y1 = item.screenY + z,
     }
 end
 
@@ -480,8 +490,13 @@ function player:drawItem(item, tint)
     local flipX = self.direction == "Left" and -1 or 1
     local flipOffsetX = 0   -- the pickup overlay below always faces Down
 
-    love.graphics.setCanvas(canvas.object)
     love.graphics.setColor(tint, tint, tint, 1)
+    -- His full sprite on the x-ray canvas, which nothing ever covers. Where
+    -- terrain in front hides him on canvas.object, the lighting pass shows
+    -- this as a ghost instead (see ultimateShader.glsl).
+    love.graphics.setCanvas(canvas.xray)
+    love.graphics.draw(canvas.temp, characterScreenX + 16 - 100, characterScreenY - 128 + item.z)
+    love.graphics.setCanvas(canvas.object)
     love.graphics.draw(canvas.temp, characterScreenX + 16 - 100, characterScreenY - 128 + item.z)
 
     -- Draw Bible page in player's hands during PickUp animation or when message is active
@@ -525,38 +540,69 @@ function player:drawItem(item, tint)
     love.graphics.setColor(1, 1, 1, 1)
 end
 
--- Yellow box on the tile in front of the player when the selected tool can
--- be used there.
+-- Name of the tool in the highlighted toolbar slot (e.g. "Hoe", "Empty").
+function player:selectedTool()
+    return toolbarMap.slots[toolbarMap.visibleSlots[ui.highlightedSlot]].name
+end
+
+-- TERRAIN SHAPING (Q / Shift+Q with the Hoe selected)
+-- Raises (direction = 1) or lowers (direction = -1) the tile in front of the
+-- player by one level. Heights stay between -MAX_DEPTH (a pit) and MAX_RAISE.
+-- Refused if the new height would put the player inside the tile (his
+-- collision box can overlap the target tile when he faces sideways).
+local RAISE_STEP = 32                 -- one tile
+local MAX_RAISE  = 10 * RAISE_STEP    -- tallest a player-made mountain can get
+local MAX_DEPTH  = 5 * RAISE_STEP     -- deepest a pit can get (deeper only shows more back wall)
+
+function player:shapeTerrain(direction)
+    if self:selectedTool() ~= "Hoe" then return end
+    local tx, ty = self:getTargetTile()
+    local cell = mapArray[ty] and mapArray[ty][tx]
+    if not cell then return end
+
+    local oldHeight = -cell[2]
+    local newHeight = math.max(-MAX_DEPTH, math.min(MAX_RAISE, oldHeight + direction * RAISE_STEP))
+    if newHeight == oldHeight then return end
+
+    terrain:setTileHeight(tx, ty, newHeight)
+    if not self:canMoveTo(self.x, self.y, self.z) then
+        terrain:setTileHeight(tx, ty, oldHeight)   -- would trap him: undo
+        return
+    end
+    sounds.play("shovel")
+end
+
+-- Outline on the tile in front of the player:
+--   yellow  the selected tool can be used there (plow / sow / water)
+--   white   Hoe selected but the tile can't be plowed: shows which tile
+--           Q / Shift+Q will raise or lower
 function player:drawOutline(cameraX, cameraY, mapArray)
     if self.facingPage then return end   -- the page's outline takes priority
 
-    if not toolbarMap then
-        if not toolbarMapErrorPrinted then
-            print("Error: toolbarMap is nil in player:drawOutline")
-            toolbarMapErrorPrinted = true
-        end
-        return
-    end
-
-    local slot = toolbarMap.slots[toolbarMap.visibleSlots[ui.highlightedSlot]]
-    local tool = slot.name
+    local tool = self:selectedTool()
     local isSeed = tool:find("Seed")
     if tool ~= "Hoe" and not isSeed and tool ~= "Watering Can" then return end
 
-    love.graphics.setCanvas(canvas.offscreen)
-    love.graphics.setColor(1, 1, 0, 1)
-
     local tx, ty = self:getTargetTile()
-    local z = mapArray[ty] and mapArray[ty][tx] and mapArray[ty][tx][2]
-    local drawOutline = (tool == "Hoe" and self:canPlow(tx, ty)) or
-                        (isSeed and self:canSow(tx, ty)) or
-                        (tool == "Watering Can" and self:canWater(tx, ty))
+    local cell = mapArray[ty] and mapArray[ty][tx]
+    if not cell then return end
 
-    if drawOutline then
-        local x = (tx - 1) * sprites.size - cameraX
-        local y = (ty - 1) * sprites.size - cameraY
-        love.graphics.rectangle("line", x, y + z, sprites.size, sprites.size)
+    local usable = (tool == "Hoe" and self:canPlow(tx, ty)) or
+                   (isSeed and self:canSow(tx, ty)) or
+                   (tool == "Watering Can" and self:canWater(tx, ty))
+
+    if usable then
+        love.graphics.setColor(1, 1, 0, 1)
+    elseif tool == "Hoe" then
+        love.graphics.setColor(1, 1, 1, 0.8)
+    else
+        return
     end
+
+    love.graphics.setCanvas(canvas.offscreen)
+    local x = (tx - 1) * sprites.size - cameraX
+    local y = (ty - 1) * sprites.size - cameraY
+    love.graphics.rectangle("line", x, y + cell[2], sprites.size, sprites.size)
     love.graphics.setColor(1, 1, 1, 1)
 end
 

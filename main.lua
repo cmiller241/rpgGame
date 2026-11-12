@@ -202,10 +202,18 @@ function love.draw()
 
     -- 2. Collect, one tile row at a time from the back (top) to the front.
     -- Rows below the screen are included because tall cliffs there reach up
-    -- into view and sprites there cast shadows up into view.
+    -- into view and sprites there cast shadows up into view. Rows above the
+    -- screen are included when there are pits, since a pit floor is drawn
+    -- lower than its row and can sink into view.
     local extraRows = math.max(math.ceil(terrain.maxHeight / ts) + 1, MARGIN_TILES)
+    local rowsAbove = math.ceil(-terrain.minHeight / ts)
+    -- Pit focus (lighting.lua): while active, tiles at or below the player's
+    -- level are ALSO drawn into a separate layer.
+    local focus = lighting.focus
+    local focusOn = focus.amount > 0
+    sprites.focusBatch:clear()
     local rowCount = 0
-    for y = 0, tilesVertical + extraRows do
+    for y = -rowsAbove, tilesVertical + extraRows do
         local yC = firstTileY + y
         if yC >= 1 and yC <= #mapArray then
             rowCount = rowCount + 1
@@ -225,14 +233,25 @@ function love.draw()
                     local tile, z = cell[1], cell[2]
                     local def = tiles.get(tile)
 
-                    if z ~= 0 then
-                        mountain:add(xC, yC, z, screenX, screenY)
-                        occluders[#occluders + 1] = {mountain:footprint(z, screenX, screenY)}
+                    -- Wall below this tile (cliff face or a pit's back wall), if any.
+                    mountain:add(xC, yC, z, screenX, screenY)
+                    -- Raised tiles, and ground just in front of a pit, hide
+                    -- sprites behind them (terrain:buildHiders).
+                    if terrain:hidesBehind(xC, yC) then
+                        occluders[#occluders + 1] = {mountain:footprint(xC, yC, z, screenX, screenY)}
                     end
 
                     grass:add(xC, yC, z, screenX, screenY)  -- every tile sits on grass
                     if def.ground == "dirt" then dirt:add(xC, yC, z, screenX, screenY) end
                     if def.flourish then grass:addFlourish(xC, yC, z, screenX, screenY) end
+
+                    if focusOn and terrain:inFocusLayer(-z, focus.level) then
+                        local fb = sprites.focusBatch
+                        mountain:add(xC, yC, z, screenX, screenY, fb)
+                        grass:add(xC, yC, z, screenX, screenY, fb)
+                        if def.ground == "dirt" then dirt:add(xC, yC, z, screenX, screenY, fb) end
+                        if def.flourish then grass:addFlourish(xC, yC, z, screenX, screenY, fb) end
+                    end
                     if def.addSprites then def.addSprites(items, xC, yC, z, screenX, screenY, tile) end
                 end
             end
@@ -273,10 +292,15 @@ function love.draw()
         end
     end
 
-    -- 5. Ground tiles.
+    -- 5. Ground tiles (and the pit layer, if the player is in a pit).
     love.graphics.setCanvas(canvas.offscreen)
     love.graphics.draw(sprites.tileBatch)
     player:drawOutline(cameraX, cameraY, mapArray)
+    if focusOn then
+        love.graphics.setCanvas(canvas.focus)
+        love.graphics.draw(sprites.focusBatch)
+        terrain:drawFocusSurface(focus.level, cameraX, cameraY)
+    end
 
     -- 6. Lighting, shadows and colour grading.
     lighting:composite(cameraX, cameraY)

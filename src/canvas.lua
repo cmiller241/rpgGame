@@ -9,6 +9,10 @@
 --   surface       per-pixel terrain shape (face/top + height), see terrain.lua
 --   intermediate  the lit, colour-graded frame before it's scaled to the window
 --   temp          200x200 scratch space for the player's current frame
+--   xray          the player alone, never hidden by anything; where terrain
+--                 hides him, the lighting pass draws this as a faint ghost
+--   focus         while he's in a pit: just the tiles at or below his level
+--   focusSurface  terrain shape (like surface) for just those tiles
 
 local canvas = {}
 package.loaded[...] = canvas  -- register now, so modules that require each other share this table
@@ -19,6 +23,7 @@ function canvas:initialize(cWidth, cHeight)
     canvas.offscreen    = love.graphics.newCanvas(cWidth, cHeight)
     canvas.intermediate = love.graphics.newCanvas(cWidth, cHeight)
     canvas.temp         = love.graphics.newCanvas(200, 200)
+    canvas.xray         = love.graphics.newCanvas(cWidth, cHeight)
 
     -- The surface map stores heights, so it wants more precision than 8 bits
     -- per channel (8 bits would round heights to 4 px steps). Practically every
@@ -27,6 +32,9 @@ function canvas:initialize(cWidth, cHeight)
     local surfaceFormat = formats.rgba16f and "rgba16f" or "rgba8"
     canvas.surface = love.graphics.newCanvas(cWidth, cHeight, { format = surfaceFormat })
     canvas.surface:setFilter("nearest", "nearest")
+    canvas.focus        = love.graphics.newCanvas(cWidth, cHeight)
+    canvas.focusSurface = love.graphics.newCanvas(cWidth, cHeight, { format = surfaceFormat })
+    canvas.focusSurface:setFilter("nearest", "nearest")
 
     canvas.showSurfaceMap = canvas.showSurfaceMap or false
     -- Linear on purpose: pixelScaleShader relies on it to blend only the
@@ -35,9 +43,11 @@ function canvas:initialize(cWidth, cHeight)
     canvas.intermediate:setFilter("linear", "linear")
 end
 
--- Clears the per-frame canvases. (surface is cleared by terrain:drawSurfaceMap.)
+-- Clears the per-frame canvases. (surface / focusSurface are cleared when
+-- terrain draws them.)
 function canvas:clear()
-    for _, c in ipairs({canvas.object, canvas.shadow, canvas.offscreen, canvas.intermediate, canvas.temp}) do
+    for _, c in ipairs({canvas.object, canvas.shadow, canvas.offscreen, canvas.intermediate,
+                        canvas.temp, canvas.xray, canvas.focus}) do
         love.graphics.setCanvas(c)
         love.graphics.clear(0, 0, 0, 0)
     end

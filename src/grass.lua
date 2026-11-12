@@ -15,14 +15,15 @@ local sprites = require("src.sprites")
 --     +1  tile above (north) is not higher
 --     +2  tile to the right is not higher
 --     +4  tile to the left is not higher
-function grass:add(xC, yC, z, screenX, screenY)
+function grass:add(xC, yC, z, screenX, screenY, batch)
+    batch = batch or sprites.tileBatch
     local tile = 1
     local row = mapArray[yC]
     if yC > 1 and mapArray[yC - 1][xC] and mapArray[yC - 1][xC][2] <= z then tile = tile + 1 end
     if row[xC + 1] and row[xC + 1][2] <= z then tile = tile + 2 end
     if row[xC - 1] and row[xC - 1][2] <= z then tile = tile + 4 end
 
-    sprites.tileBatch:add(sprites.spritesQuads[tile], screenX, screenY + z)
+    batch:add(sprites.spritesQuads[tile], screenX, screenY + z)
 end
 
 -- Which flourish sprite (quads 11-22) each tile gets. Worked out once at load
@@ -41,8 +42,8 @@ function grass:buildFlourishes()
     math.randomseed(os.time()) -- don't leave the global generator predictable
 end
 
-function grass:addFlourish(xC, yC, z, screenX, screenY)
-    sprites.tileBatch:add(sprites.spritesQuads[flourishes[yC][xC]], screenX, screenY + z)
+function grass:addFlourish(xC, yC, z, screenX, screenY, batch)
+    (batch or sprites.tileBatch):add(sprites.spritesQuads[flourishes[yC][xC]], screenX, screenY + z)
 end
 
 return grass

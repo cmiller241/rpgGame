@@ -18,6 +18,26 @@ local terrain = require("src.terrain")
 lighting.lampRadius = 100     -- px, how far the player's lamp reaches
 lighting.lampHeight = 24      -- px above the player's feet (roughly hand height)
 
+-- How visible the player's silhouette is through terrain that hides him
+-- (pit rims, cliffs in front of him). 0 turns the ghost off.
+lighting.ghostOpacity = 0.2
+
+-- PIT FOCUS
+-- While the player stands below ground level (in a pit), the pit gets the
+-- attention:
+--   * higher terrain that hides part of the pit (e.g. its front rim) turns
+--     partly see-through, showing the pit floor and the player under it;
+--   * all other terrain and sprites above his level are dimmed a little.
+-- The tiles at/below his level are rendered as a separate layer for this
+-- (main.lua, terrain:drawFocusSurface). Eases in and out.
+lighting.focusRevealOpacity = 0.5     -- how much of the pit shows through higher ground (0..1)
+lighting.focusPlayerOpacity = 0.85    -- how much of the player shows through it (0..1)
+lighting.focusDim           = 0.2     -- how much darker/greyer everything above his level gets (0..1)
+lighting.focusFadeTime      = 0.25    -- seconds to ease in / out
+
+-- Current focus state (updated in lighting:begin).
+lighting.focus = { amount = 0, level = 0 }
+
 -- Filled in by lighting:begin() each frame.
 lighting.sun = nil
 lighting.lamp = { x = 0, y = 0, z = 0, radius = lighting.lampRadius }
@@ -25,6 +45,19 @@ lighting.lamp = { x = 0, y = 0, z = 0, radius = lighting.lampRadius }
 -- Call once at the start of love.draw, before any sprites are drawn.
 function lighting:begin()
     self.sun = sun:getState()
+
+    -- Pit focus: on while the ground under him is below ground level. When he
+    -- climbs out, keep the old level until the effect has faded away.
+    local focus = self.focus
+    local groundLevel = -player.shadowZ
+    if groundLevel < 0 then focus.level = groundLevel end
+    local target = (groundLevel < 0) and 1 or 0
+    local step = love.timer.getDelta() / math.max(self.focusFadeTime, 1e-6)
+    if focus.amount < target then
+        focus.amount = math.min(target, focus.amount + step)
+    else
+        focus.amount = math.max(target, focus.amount - step)
+    end
 
     -- The lamp sits at the player's feet position on the ground plane, raised
     -- to hand height. player.z is negative-up, so -player.z is the height.
@@ -63,6 +96,16 @@ function lighting:composite(cameraX, cameraY)
     terrain:sendUniforms(s, cameraX, cameraY)
     s:send("objectCanvas", canvas.object)
     s:send("shadowCanvas", canvas.shadow)
+    s:send("xrayCanvas", canvas.xray)
+    s:send("ghostOpacity", self.ghostOpacity)
+
+    s:send("focusCanvas", canvas.focus)
+    s:send("focusSurfaceMap", canvas.focusSurface)
+    s:send("focusAmount", self.focus.amount)
+    s:send("focusLevel", self.focus.level)
+    s:send("focusRevealOpacity", self.focusRevealOpacity)
+    s:send("focusPlayerOpacity", self.focusPlayerOpacity)
+    s:send("focusDim", self.focusDim)
 
     s:send("sunDir", {sunState.dirX, sunState.dirY})
     s:send("sunSlope", sunState.slope)

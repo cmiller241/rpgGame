@@ -14,7 +14,8 @@
 // Uniforms are filled in by terrain:sendUniforms().
 
 uniform Image surfaceMap;        // screen-space: R = is cliff face, B = height / heightRange
-uniform Image heightMap;         // world-space, 1 texel per tile, height packed in R (hi) + G (lo)
+uniform Image heightMap;         // world-space, 1 texel per tile, height + heightBias packed in R (hi) + G (lo)
+uniform float heightBias;        // added before packing so pits (negative heights) fit
 uniform vec2  mapTiles;          // map size in tiles (cols, rows)
 uniform float tileSize;          // 32
 uniform float heightRange;       // multiply surfaceMap.b by this to get pixels
@@ -27,20 +28,22 @@ uniform float sunSoftness;       // apparent size of the sun (see sun.softness);
 const float SUN_STEP  = 3.0;     // px per step
 const int   SUN_STEPS = 160;     // => shadows up to 480 px long
 
-// Height in px of the tile under a world-space point. Off-map = 0.
+// Height in px of the tile under a world-space point (negative in a pit).
+// Off-map = 0.
 float terrainHeightAt(vec2 world) {
     vec2 tile = floor(world / tileSize);
     if (tile.x < 0.0 || tile.y < 0.0 || tile.x >= mapTiles.x || tile.y >= mapTiles.y) {
         return 0.0;
     }
     vec4 t = Texel(heightMap, (tile + 0.5) / mapTiles);
-    return floor(t.r * 255.0 + 0.5) * 256.0 + floor(t.g * 255.0 + 0.5);
+    return floor(t.r * 255.0 + 0.5) * 256.0 + floor(t.g * 255.0 + 0.5) - heightBias;
 }
 
-// Turns a screen pixel into the world-space point of the terrain visible there.
-// `isFace` reports whether that pixel is on a vertical cliff face.
-vec3 surfacePoint(vec2 screenPx, out bool isFace) {
-    vec4 s = Texel(surfaceMap, screenPx / screenSize);
+// Turns a surface-map sample `s` for screen pixel `screenPx` into the
+// world-space point of the terrain there. `isFace` reports whether it's on a
+// vertical wall. (Takes the sample so it works for any surface map, e.g. the
+// pit focus layer's.)
+vec3 surfacePointFrom(vec4 s, vec2 screenPx, out bool isFace) {
     float h = s.b * heightRange;
     isFace = s.r > 0.5;
     vec3 p = vec3(screenPx.x + camera.x, screenPx.y + camera.y + h, h);
@@ -49,6 +52,11 @@ vec3 surfacePoint(vec2 screenPx, out bool isFace) {
     // its own cliff and shadow the wall with itself.
     if (isFace) p.y += 0.5;
     return p;
+}
+
+// The world-space point of the terrain visible at a screen pixel (main view).
+vec3 surfacePoint(vec2 screenPx, out bool isFace) {
+    return surfacePointFrom(Texel(surfaceMap, screenPx / screenSize), screenPx, isFace);
 }
 
 // How much of the sun terrain blocks for world point p: 0 = fully lit,

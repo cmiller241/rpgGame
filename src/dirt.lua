@@ -12,7 +12,8 @@ local tiles = require("src.tiles")
 -- Adds a dirt tile to the tile batch. The sprite (quads 56-71) is picked by
 -- which neighbours are also dirt, so patches join up seamlessly:
 --     +1 up   +2 left   +4 right   +8 down
-function dirt:add(xC, yC, z, screenX, screenY)
+function dirt:add(xC, yC, z, screenX, screenY, batch)
+    batch = batch or sprites.tileBatch
     local tile = 56
     -- (Previously "type >= 56", which also counted trees as dirt.)
     local function isDirt(x, y)
@@ -25,7 +26,7 @@ function dirt:add(xC, yC, z, screenX, screenY)
     if isDirt(xC + 1, yC) then tile = tile + 4 end
     if isDirt(xC, yC + 1) then tile = tile + 8 end
 
-    sprites.tileBatch:add(sprites.spritesQuads[tile], screenX, screenY + z)
+    batch:add(sprites.spritesQuads[tile], screenX, screenY + z)
 end
 
 return dirt

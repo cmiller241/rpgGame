@@ -70,9 +70,9 @@ local function shadowBounds(c, sunState, lamp, cameraX, cameraY)
     if sunState.isUp and sunState.litLevel > sunState.shadowLevel then
         -- The sun is always on the camera side (dirY > 0), so the shadow runs
         -- from the base line away from the sun and never below the feet.
-        -- Worst case it falls onto ground lower than the sprite's base, so
-        -- the full sprite height plus its base height can be projected.
-        local length = math.min((spriteTop + c.worldZ) / sunState.slope, MAX_SHADOW_LENGTH)
+        -- Worst case it falls onto the lowest ground on the map (the floor
+        -- of the deepest pit), so project the sprite's full height above that.
+        local length = math.min((spriteTop + c.worldZ - terrain.minHeight) / sunState.slope, MAX_SHADOW_LENGTH)
         local tipX = c.worldX - sunState.dirX * length
         local tipY = c.worldY - sunState.dirY * length
         -- Soft edges spread up to (distance * softness) px past the silhouette.
@@ -94,11 +94,12 @@ local function shadowBounds(c, sunState, lamp, cameraX, cameraY)
     if not any then return nil end
 
     -- World ground-plane box -> screen box. Terrain at height h is drawn h px
-    -- higher, so extend the top by the tallest terrain on the map.
+    -- higher, so extend the top by the tallest terrain on the map and the
+    -- bottom by the deepest pit.
     local x0 = math.max(0, math.floor(minX - cameraX))
     local x1 = math.min(window.width, math.ceil(maxX - cameraX))
     local y0 = math.max(0, math.floor(minY - cameraY - terrain.maxHeight))
-    local y1 = math.min(window.height, math.ceil(maxY - cameraY))
+    local y1 = math.min(window.height, math.ceil(maxY - cameraY - terrain.minHeight))
     if x1 <= x0 or y1 <= y0 then return nil end
     return x0, y0, x1, y1
 end
