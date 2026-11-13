@@ -28,7 +28,8 @@
 -- the default before any module loads an image.
 love.graphics.setDefaultFilter("nearest", "nearest")
 
-local mapArray     = require("maps.map01")
+local level        = require("src.level")          -- loads the map file (see src/level.lua)
+local mapArray     = level.cells
 local xorshift16   = require("src.xorshift")
 local window       = require("src.window")
 local canvas       = require("src.canvas")
@@ -65,6 +66,11 @@ function love.load(args)
     canvas:initialize(window.width, window.height)
     terrain:build(mapArray)
     grass:buildFlourishes()
+
+    -- Starting water from the map, and the player at the map's spawn point
+    -- (standing on whatever ground or block is there).
+    for _, w in ipairs(level.water) do water:add(w[1], w[2], w[3]) end
+    player:teleport(level.spawn.x, level.spawn.y, -player:supportHeight(level.spawn.x, level.spawn.y, -100000))
 
     -- Fonts are created once; making them every frame leaks memory fast.
     debugFontSmall = love.graphics.newFont(12)

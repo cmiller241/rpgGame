@@ -176,6 +176,9 @@ local function startShots(gameDraw)
     -- Only a few frames per shot: make fades instant.
     require("src.tree").FADE_SPEED = math.huge
     require("src.lighting").focusFadeTime = 0
+    -- Freeze the clock (wind sway, crop sway, water sparkles) so every run
+    -- of --shots produces identical images and can be compared pixel for pixel.
+    love.timer.getTime = function() return 1000 end
     local index, frame, shots = 1, 0, {}
 
     love.update = function() end   -- freeze the game

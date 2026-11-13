@@ -30,7 +30,7 @@ local tiles = {}
 package.loaded[...] = tiles  -- register now, so modules that require each other share this table
 
 local crop = require("src.crop")
-local mapArray = require("maps.map01")
+local mapArray = require("src.level").cells
 local sprites = require("src.sprites")
 local tree = require("src.tree")
 

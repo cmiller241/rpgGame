@@ -1,0 +1,5 @@
+# --- Web build (js/) ---
+# `npm install` recreates this from package.json / package-lock.json.
+node_modules/
+# The bundled web game: `npm run build` recreates it from js/.
+dist/

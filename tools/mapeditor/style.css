@@ -1,0 +1,112 @@
+/* Map editor styling: dark UI so the map art stands out. */
+
+:root {
+    --bg: #1b1e23;
+    --panel: #23272e;
+    --panel-2: #2b3038;
+    --border: #3a404a;
+    --text: #e6e8eb;
+    --muted: #9aa3ad;
+    --accent: #e8b84a;
+    --error: #ff7a6b;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+    margin: 0;
+    height: 100%;
+    background: var(--bg);
+    color: var(--text);
+    font: 13px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif;
+    overflow: hidden;
+}
+
+body { display: flex; flex-direction: column; }
+
+#toolbar {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 6px;
+    padding: 6px 10px;
+    background: var(--panel);
+    border-bottom: 1px solid var(--border);
+}
+#toolbar label { color: var(--muted); display: inline-flex; align-items: center; gap: 3px; }
+.brand { font-weight: 700; color: var(--accent); margin-right: 6px; }
+.sep { width: 1px; height: 20px; background: var(--border); margin: 0 4px; }
+#zoom-label { min-width: 32px; text-align: center; }
+#file-label { margin-left: auto; color: var(--muted); font-family: ui-monospace, Consolas, monospace; }
+
+button, select, input, textarea {
+    font: inherit;
+    color: var(--text);
+    background: var(--panel-2);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+}
+button { padding: 3px 9px; cursor: pointer; }
+button:hover { border-color: var(--accent); }
+button.active { background: var(--accent); color: #1b1e23; border-color: var(--accent); font-weight: 600; }
+
+.seg { display: inline-flex; }
+.seg button { border-radius: 0; }
+.seg button:first-child { border-radius: 4px 0 0 4px; }
+.seg button:last-child { border-radius: 0 4px 4px 0; }
+.seg button + button { border-left: none; }
+
+main { flex: 1; display: flex; min-height: 0; }
+
+aside {
+    width: 230px;
+    flex-shrink: 0;
+    overflow-y: auto;
+    background: var(--panel);
+    padding: 8px 10px;
+}
+#left { border-right: 1px solid var(--border); }
+#right { border-left: 1px solid var(--border); width: 270px; }
+aside section { margin-bottom: 14px; }
+aside h3 { margin: 0 0 6px; font-size: 12px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); }
+
+.tools { display: flex; flex-direction: column; gap: 4px; }
+.tools button { text-align: left; }
+
+.palette { display: grid; grid-template-columns: repeat(5, 1fr); gap: 3px; }
+.palette button { padding: 2px; line-height: 0; }
+.palette canvas { width: 32px; height: 32px; image-rendering: pixelated; }
+
+.field { display: flex; align-items: center; justify-content: space-between; gap: 6px; margin: 6px 0; color: var(--muted); }
+.field input { width: 80px; padding: 2px 4px; }
+.field select { padding: 2px 4px; }
+
+.hint { color: var(--muted); font-size: 12px; margin: 6px 0 0; }
+.help p { color: var(--muted); font-size: 12px; margin: 0; }
+
+#canvas-wrap { flex: 1; position: relative; min-width: 0; }
+#canvas { position: absolute; inset: 0; display: block; cursor: crosshair; }
+
+#hover-info, #map-info { font-size: 12px; color: var(--text); }
+#hover-info b, #map-info b { color: var(--muted); font-weight: 500; }
+
+.prop { display: grid; grid-template-columns: 80px 1fr auto; gap: 4px; align-items: start; margin-bottom: 4px; }
+.prop span { color: var(--muted); padding-top: 3px; overflow: hidden; text-overflow: ellipsis; }
+.prop input, .prop textarea { width: 100%; padding: 2px 4px; resize: vertical; }
+.prop button { padding: 1px 6px; }
+.buttons { display: flex; gap: 6px; margin-top: 8px; }
+
+#status {
+    position: fixed;
+    left: 50%;
+    bottom: 12px;
+    transform: translateX(-50%);
+    max-width: 70%;
+    padding: 6px 12px;
+    background: rgba(20, 22, 26, 0.92);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    pointer-events: none;
+}
+#status:empty { display: none; }
+#status.error { color: var(--error); border-color: var(--error); }

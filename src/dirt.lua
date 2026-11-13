@@ -5,7 +5,7 @@
 local dirt = {}
 package.loaded[...] = dirt  -- register now, so modules that require each other share this table
 
-local mapArray = require("maps.map01")
+local mapArray = require("src.level").cells
 local sprites = require("src.sprites")
 local tiles = require("src.tiles")
 

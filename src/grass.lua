@@ -5,7 +5,7 @@
 local grass = {}
 package.loaded[...] = grass  -- register now, so modules that require each other share this table
 
-local mapArray = require("maps.map01")
+local mapArray = require("src.level").cells
 local sprites = require("src.sprites")
 
 -- Adds the grass top for one tile to the tile batch, lifted by its height.

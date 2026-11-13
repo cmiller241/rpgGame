@@ -1,0 +1,17 @@
+{
+  "name": "scattered-verses",
+  "version": "1.0.0",
+  "description": "Scattered Verses: the browser build of the LÖVE game",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node tools/gen-asset-list.mjs && esbuild js/boot.js --bundle --sourcemap --outfile=dist/bundle.js",
+    "watch": "node tools/gen-asset-list.mjs && esbuild js/boot.js --bundle --sourcemap --outfile=dist/bundle.js --watch",
+    "serve": "node tools/serve.mjs",
+    "maps": "node tools/lua-map-to-js.mjs",
+    "assets": "node tools/gen-asset-list.mjs"
+  },
+  "devDependencies": {
+    "esbuild": "^0.27.3"
+  }
+}

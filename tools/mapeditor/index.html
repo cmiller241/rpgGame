@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Map Editor</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <!--
+        Scattered Verses map editor. Open this file directly in a browser
+        (Chrome or Edge recommended: Save then writes straight back to the
+        file you opened). It must stay in tools/mapeditor/ so it can find the
+        game art in ../../img/. See README.md.
+    -->
+    <header id="toolbar">
+        <span class="brand">Map Editor</span>
+        <button id="btn-new" title="New blank map">New</button>
+        <button id="btn-open" title="Open a map (Ctrl+O)">Open…</button>
+        <button id="btn-save" title="Save (Ctrl+S)">Save</button>
+        <button id="btn-saveas" title="Save as (Ctrl+Shift+S)">Save as…</button>
+        <span class="sep"></span>
+        <button id="btn-undo" title="Undo (Ctrl+Z)">Undo</button>
+        <button id="btn-redo" title="Redo (Ctrl+Y)">Redo</button>
+        <span class="sep"></span>
+        <span class="seg">
+            <button id="view-flat" title="Top-down data view (Tab)">Flat</button>
+            <button id="view-height" title="3/4 view, like the game (Tab)">Height</button>
+        </span>
+        <span class="sep"></span>
+        <button id="zoom-out" title="Zoom out (-)">−</button>
+        <span id="zoom-label">2×</span>
+        <button id="zoom-in" title="Zoom in (+)">+</button>
+        <span class="sep"></span>
+        <label><input type="checkbox" id="show-grid"> Grid</label>
+        <label><input type="checkbox" id="show-heights"> Heights</label>
+        <label><input type="checkbox" id="show-water"> Water</label>
+        <label><input type="checkbox" id="show-blocks"> Blocks</label>
+        <label><input type="checkbox" id="show-objects"> Objects</label>
+        <span id="file-label"></span>
+        <input type="file" id="file-input" accept=".lua" hidden>
+    </header>
+
+    <main>
+        <aside id="left">
+            <section>
+                <h3>Tools</h3>
+                <div class="tools">
+                    <button data-tool="tile">1 Tile</button>
+                    <button data-tool="height">2 Height</button>
+                    <button data-tool="block">3 Block</button>
+                    <button data-tool="water">4 Water</button>
+                    <button data-tool="objects">5 Objects</button>
+                </div>
+            </section>
+            <section>
+                <h3>Brush</h3>
+                <div class="seg">
+                    <button data-brush="1">1×1</button>
+                    <button data-brush="3">3×3</button>
+                    <button data-brush="5">5×5</button>
+                </div>
+            </section>
+            <section id="tool-options"></section>
+            <section class="help">
+                <h3>Mouse &amp; keys</h3>
+                <p><b>Left</b> apply · <b>Right</b> opposite / erase<br>
+                   <b>Alt+click</b> pick value under cursor<br>
+                   <b>Middle-drag</b> or <b>Space+drag</b> pan<br>
+                   <b>Wheel</b> zoom · <b>Tab</b> switch view<br>
+                   <b>[ ]</b> brush size · <b>1–5</b> tools<br>
+                   <b>Ctrl+Z / Y</b> undo / redo</p>
+            </section>
+        </aside>
+
+        <div id="canvas-wrap"><canvas id="canvas"></canvas></div>
+
+        <aside id="right">
+            <section>
+                <h3>Cursor</h3>
+                <div id="hover-info">—</div>
+            </section>
+            <section>
+                <h3>Selected object</h3>
+                <div id="object-props"></div>
+            </section>
+            <section>
+                <h3>Map</h3>
+                <div id="map-info"></div>
+            </section>
+        </aside>
+    </main>
+
+    <div id="status"></div>
+
+    <script src="js/luadata.js"></script>
+    <script src="js/render.js"></script>
+    <script src="js/editor.js"></script>
+</body>
+</html>

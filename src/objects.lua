@@ -8,46 +8,15 @@ local shader = require("src.shader")
 local spriteShadow = require("src.spriteShadow")
 local sprites = require("src.sprites")
 local terrain = require("src.terrain")
+local level = require("src.level")
 
--- Define the objects array
-object.objects = {
-    {
-        x = 200, 
-        y = 250, 
-        animationTime = 0, 
-        message = "Remember this: Whoever sows sparingly will also reap sparingly, and whoever sows generously will also reap generously. Each of you should give what you have decided in your heart to give, not reluctantly or under compulsion, for God loves a cheerful giver.", 
-        verse = "2 Corinthians 9:6-7", 
-        tool = 4,
-        toolMessage = "You can now use a hoe. Dig up earth and plant seeds!"
-    },
-    {
-        x = 800, 
-        y = 450, 
-        animationTime = 0, 
-        message = "Through thy precepts I get understanding: therefore I hate every false way. Thy Word is a lamp unto my feet and a light unto my path", 
-        verse = "Psalm 119:104,105", 
-        tool = 3,
-        toolMessage = "You can now use a lamp. It will make your path easier at night and in caves!"
-    },
-    {
-        x = 300, 
-        y = 450, 
-        animationTime = 0, 
-        message = "The Lord will guide you always; he will satisfy your needs in a sun-scorched land and will strengthen your frame. You will be like a well-watered garden, like a spring whose waters never fail.", 
-        verse = "Isaiah 58:11", 
-        tool = 9,
-        toolMessage = "You can now use a watering can. This will allow you to water the seeds you plant in order to help them grow!"
-    },
-    {
-        x = 300, 
-        y = 650, 
-        animationTime = 0, 
-        message = "For, 'All people are like grass, and all their glory is like the flowers of the field; the grass withers and the flowers fall, but the word of the Lord endures forever.' And this is the word that was preached to you.", 
-        verse = "1 Peter 1:24-25", 
-        tool = 10,
-        toolMessage = "You can now plant grass!"
-    }
-}
+-- The Bible pages placed on the map: every "page" object in the map file
+-- (edit them in tools/mapeditor). Each has x, y (where it stands), verse,
+-- message, tool (toolbar slot it unlocks) and toolMessage.
+object.objects = level:objectsOfType("page")
+for _, page in ipairs(object.objects) do
+    page.animationTime = 0   -- drives the bobbing
+end
 
 -- How close (px) the player must be to pick a page up.
 object.reach = 50

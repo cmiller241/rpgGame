@@ -1,22 +1,17 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <title>Phaser Game Demo</title>
-  <script src="https://cdn.jsdelivr.net/npm/phaser@3.80.1/dist/phaser.min.js"></script>
-  <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Scattered Verses</title>
+    <style>
+        html, body { margin: 0; height: 100%; overflow: hidden; background: #000; }
+        /* The game fills the window (the LÖVE shim sizes the canvas to it). */
+        canvas { display: block; position: fixed; inset: 0; touch-action: none; }
+    </style>
 </head>
-<body style="background-color:#000; overflow: hidden">
-  <div id="game-container"></div>
-  <script type="module">
-    import { getGameConfig } from './js/gameConfig.js';
-    import { preload } from './js/preload.js';
-    import { create } from './js/map.js';
-    import { update } from './js/update.js';
-    import { render } from './js/render.js';
-
-    const config = getGameConfig({ preload, create, update, render });
-    const game = new Phaser.Game(config);
-  </script>
+<body>
+    <canvas id="gameCanvas"></canvas>
+    <script src="dist/bundle.js"></script>
 </body>
 </html>

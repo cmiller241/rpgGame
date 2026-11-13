@@ -13,7 +13,7 @@ local player = {}
 package.loaded[...] = player  -- register now, so modules that require each other share this table
 
 local canvas = require("src.canvas")
-local mapArray = require("maps.map01")
+local mapArray = require("src.level").cells
 local message = require("src.message")
 local object = require("src.objects")
 local sounds = require("src.sounds")
