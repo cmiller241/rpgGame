@@ -21,6 +21,7 @@ local spriteMap = require("spritemap")
 local spriteShadow = require("src.spriteShadow")
 local sprites = require("src.sprites")
 local terrain = require("src.terrain")
+local water = require("src.water")
 local tiles = require("src.tiles")
 local toolbarMap = require("src.toolbarMap")
 local ui = require("src.ui")
@@ -72,6 +73,9 @@ player.animations = {
 -- 8 px tall at his feet.
 local BOX_LEFT, BOX_RIGHT = 4, 27
 local BOX_TOP, BOX_BOTTOM = -8, 0
+-- How tall he is (px, feet to top of hair), for floating blocks: he can walk
+-- under a block only if its underside is at least this far above his feet.
+local PLAYER_HEIGHT = 60
 
 -- Column of the 112 px side-facing (Left/Right) frames where his body is
 -- centred (body spans columns 41-63). See player:draw.
@@ -277,6 +281,16 @@ function player:keypressed(key)
                 triggerTool("Sowing", "canSow", "sow")
             end
         end
+    elseif key == "w" then
+        -- Cast a layer of water onto the outlined tile (Hoe selected).
+        if self:selectedTool() == "Hoe" then
+            local tx, ty = self:getTargetTile()
+            water:add(tx, ty, water.castAmount)
+            sounds.play("water")
+        end
+    elseif key == "e" then
+        -- Place / remove a floating block over the outlined tile (Hoe selected).
+        if self:selectedTool() == "Hoe" then self:toggleBlock() end
     elseif key == "q" then
         -- Shape the land with the Hoe: Q raises, Shift+Q lowers.
         local lower = love.keyboard.isDown("lshift", "rshift")
@@ -293,22 +307,46 @@ end
 
 -- Applies one tick of movement. Each axis (x, then y, then z) moves on its
 -- own, one pixel at a time, and stops at the last free pixel. So:
---   * walking into a cliff or tree puts him flush against it, no gap;
+--   * walking into a cliff, tree or block puts him flush against it, no gap;
 --   * if one axis is blocked the others still move (he slides along walls);
---   * landing on a ledge puts his feet exactly on top of it.
+--   * landing on a ledge or block puts his feet exactly on top of it;
+--   * jumping into the underside of a floating block stops him there and
+--     he falls back down (z is negative-up, so a smaller target is "up").
 function player:moveCharacter(dx, dy, dz)
     if self:moveAxis("x", math.floor(self.x + dx + 0.5)) then self.vx = 0 end
     if self:moveAxis("y", math.floor(self.y + dy + 0.5)) then self.vy = 0 end
     local oldZ = self.z
-    if self:moveAxis("z", math.floor(self.z + dz + 0.5)) then
+    local targetZ = math.floor(self.z + dz + 0.5)
+    if self:moveAxis("z", targetZ) then
         self.vz = 0
-        self.isOnGround = true            -- landed (or already standing)
+        if targetZ > oldZ then
+            self.isOnGround = true        -- moving down and stopped: landed (or already standing)
+        end                               -- moving up and stopped: bumped his head
     elseif self.z > oldZ then
         self.isOnGround = false           -- dropping: walked off a ledge or into a pit
     end
 
-    -- Ground height under the middle of his feet (used for his shadow and jump height).
-    self.shadowZ = self:getTile(self.x + 16, self.y).z
+    self:updateGround()
+end
+
+-- Height of whatever he's standing on: the highest ground or floating-block
+-- top under any part of his collision box that's at or below his feet
+-- (matching canMoveTo, so standing on the edge of a block counts). Used for
+-- his shadow, jump height and pit focus.
+function player:supportHeight(x, y, z)
+    local ts = sprites.size
+    local feet = -z
+    local best = -math.huge
+    for row = math.floor((y + BOX_TOP) / ts) + 1, math.floor((y + BOX_BOTTOM) / ts) + 1 do
+        for col = math.floor((x + BOX_LEFT) / ts) + 1, math.floor((x + BOX_RIGHT) / ts) + 1 do
+            best = math.max(best, terrain:supportAt(col, row, feet))
+        end
+    end
+    return best
+end
+
+function player:updateGround()
+    self.shadowZ = -self:supportHeight(self.x, self.y, self.z)
 end
 
 -- Steps self[axis] toward `target` one pixel at a time until it arrives or
@@ -332,14 +370,16 @@ end
 
 -- Can the player's collision box be at (newX, newY) at height newZ? Blocked
 -- by the solid part of a tile (e.g. a tree trunk, see tiles.lua), by any
--- tile taller than newZ, and by the edge of the map.
+-- tile taller than newZ, by a floating block his body would overlap, and by
+-- the edge of the map.
 --
--- See BOX_LEFT etc. at the top of this file for the box's size.
+-- See BOX_LEFT etc. and PLAYER_HEIGHT at the top of this file for his size.
 function player:canMoveTo(newX, newY, newZ)
     local left = newX + BOX_LEFT
     local right = newX + BOX_RIGHT
     local top = newY + BOX_TOP
     local bottom = newY + BOX_BOTTOM
+    local feet = -newZ
     local ts = sprites.size
 
     -- Every tile the box overlaps (at most 2x2).
@@ -349,6 +389,12 @@ function player:canMoveTo(newX, newY, newZ)
             if not cell then return false end                       -- off the map
             if cell[2] < newZ then return false end                 -- taller than us
             if tiles.blocks(col, row, left, top, right, bottom) then return false end
+            -- Floating block: solid from its underside b to its top; his body
+            -- runs from his feet to feet + PLAYER_HEIGHT.
+            local b = terrain:blockAt(col, row)
+            if b and feet < b + terrain.blockSize and feet + PLAYER_HEIGHT > b then
+                return false
+            end
         end
     end
     return true
@@ -408,7 +454,7 @@ player.drawX, player.drawY, player.drawZ = player.x, player.y, player.z
 -- Moves him instantly (no smoothing between old and new spot).
 function player:teleport(x, y, z)
     self.x, self.y, self.z = x, y, z or 0
-    self.shadowZ = self:getTile(self.x + 16, self.y).z
+    self:updateGround()
     self.vx, self.vy, self.vz = 0, 0, 0
     self:rememberPosition()
     self:updateDrawPosition(1)
@@ -472,6 +518,16 @@ function player:addSprites(list, cameraX, cameraY)
         screenX = x - cameraX, screenY = y - cameraY, z = z,
         tintX = x + 16, tintY = y - 4, tintZ = -z + 24,
     }
+    -- Standing on (or above) a floating block under his box: draw him after
+    -- the row's blocks so he's on top of it, not hidden by it (main.lua).
+    local ts = sprites.size
+    item.drawLast = false
+    for row = math.floor((y + BOX_TOP) / ts) + 1, math.floor((y + BOX_BOTTOM) / ts) + 1 do
+        for col = math.floor((x + BOX_LEFT) / ts) + 1, math.floor((x + BOX_RIGHT) / ts) + 1 do
+            local b = terrain:blockAt(col, row)
+            if b and -z >= b + terrain.blockSize - 0.5 then item.drawLast = true end
+        end
+    end
     list[#list + 1] = item
 
     -- Rough screen rectangle of his body (about 28 px wide, 80 tall above
@@ -545,6 +601,29 @@ function player:selectedTool()
     return toolbarMap.slots[toolbarMap.visibleSlots[ui.highlightedSlot]].name
 end
 
+-- FLOATING BLOCKS (E with the Hoe selected)
+-- Places a block over the outlined tile, BLOCK_GAP px above its ground, or
+-- removes the block that's there. Refused if it would trap the player.
+-- His jump peaks at ~65 px, so with a 24 px gap the block's top (56 px) is
+-- comfortably reachable. To walk UNDER a block its underside must be at least
+-- PLAYER_HEIGHT (60 px) up; such blocks can only be reached from higher ground.
+local BLOCK_GAP = 24
+
+function player:toggleBlock()
+    local tx, ty = self:getTargetTile()
+    if not (mapArray[ty] and mapArray[ty][tx]) then return end
+    if terrain:blockAt(tx, ty) then
+        terrain:setBlock(tx, ty, nil)
+    else
+        terrain:setBlock(tx, ty, terrain:heightAtTile(tx, ty) + BLOCK_GAP)
+        if not self:canMoveTo(self.x, self.y, self.z) then
+            terrain:setBlock(tx, ty, nil)              -- would trap him: undo
+            return
+        end
+    end
+    sounds.play("shovel")
+end
+
 -- TERRAIN SHAPING (Q / Shift+Q with the Hoe selected)
 -- Raises (direction = 1) or lowers (direction = -1) the tile in front of the
 -- player by one level. Heights stay between -MAX_DEPTH (a pit) and MAX_RAISE.
@@ -563,6 +642,9 @@ function player:shapeTerrain(direction)
     local oldHeight = -cell[2]
     local newHeight = math.max(-MAX_DEPTH, math.min(MAX_RAISE, oldHeight + direction * RAISE_STEP))
     if newHeight == oldHeight then return end
+    -- Ground can't rise into a floating block above it.
+    local block = terrain:blockAt(tx, ty)
+    if block and newHeight > block then return end
 
     terrain:setTileHeight(tx, ty, newHeight)
     if not self:canMoveTo(self.x, self.y, self.z) then

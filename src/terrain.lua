@@ -44,7 +44,7 @@
 --        world = (screenX + cameraX, screenY + cameraY + h, h)
 --
 --    Channels:  R = 1 on cliff faces, 0 on tops/ground
---               G = unused
+--               G = water depth / heightRange on water surfaces (see water.lua)
 --               B = height / terrain.heightRange, NEGATIVE in pits (the
 --                   canvas is 16-bit float, so negatives are fine). Faces
 --                   have a vertical gradient: top height at the top edge,
@@ -86,12 +86,20 @@ function terrain:build(map)
     end
 
     -- Heights in pixels (positive up), [row][col]. Missing cells (ragged rows) = 0.
+    -- Floating blocks: map cell [3] is the height of a block's underside
+    -- (0 or missing = no block). See FLOATING BLOCKS below.
+    self.version = (self.version or 0) + 1   -- bumped whenever heights change
     self.heights = {}
+    self.blocks = {}
     for r = 1, self.rows do
         local row = {}
         for c = 1, self.cols do
             local cell = map[r][c]
             row[c] = cell and -cell[2] or 0
+            if cell and cell[3] and cell[3] ~= 0 then
+                self.blocks[r] = self.blocks[r] or {}
+                self.blocks[r][c] = cell[3]
+            end
         end
         self.heights[r] = row
     end
@@ -101,8 +109,53 @@ function terrain:build(map)
     self:buildSurfaceMesh()
 end
 
--- Recomputes maxHeight (tallest tile, >= 0) and minHeight (deepest pit, <= 0).
--- Shaders use these to stop shadow rays early and size their work.
+-- FLOATING BLOCKS
+-- A tile can have one floating block: a 32 px cube whose underside is at
+-- `bottom` px (so its top is at bottom + 32), with open space between it
+-- and the ground. Blocks are part of the terrain for drawing and lighting
+-- (their top and front faces are in the surface map, they cast shadows via
+-- the heightmap's B channel), and the player can stand on them, walk under
+-- them, and bump into them (player.lua).
+terrain.blockSize = 32
+
+-- Underside height (px) of the block on tile (col, row), or nil.
+function terrain:blockAt(col, row)
+    local r = self.blocks[row]
+    return r and r[col]
+end
+
+-- Adds a block over tile (col, row) with its underside at `bottom` px, or
+-- removes it (bottom = nil). Bottoms are rounded to 8 px (heightmap storage).
+function terrain:setBlock(col, row, bottom)
+    local cell = self.map[row] and self.map[row][col]
+    if not cell then return end
+    if bottom then bottom = math.floor(bottom / 8 + 0.5) * 8 end
+    cell[3] = bottom or 0
+    self.blocks[row] = self.blocks[row] or {}
+    self.blocks[row][col] = bottom
+    self.version = self.version + 1
+    self:updateExtents()
+    self:writeHeightTexel(col, row)
+    self.heightMap:replacePixels(self.heightData)
+    self:buildSurfaceMesh()
+end
+
+-- Height of the highest surface on tile (col, row) that something at height
+-- `h` could be standing on: the block's top if it's at or below h, otherwise
+-- the ground.
+function terrain:supportAt(col, row, h)
+    local ground = self:heightAtTile(col, row)
+    local b = self:blockAt(col, row)
+    if b and b + self.blockSize <= h + 0.5 and b + self.blockSize > ground then
+        return b + self.blockSize
+    end
+    return ground
+end
+
+-- Recomputes maxHeight and minHeight. maxHeight is the highest thing that
+-- can block light: the tallest tile or the top of the highest block (>= 0).
+-- minHeight is the deepest pit (<= 0). Shaders use these to stop shadow
+-- rays early and to size their work.
 function terrain:updateExtents()
     self.maxHeight, self.minHeight = 0, 0
     for r = 1, self.rows do
@@ -110,6 +163,11 @@ function terrain:updateExtents()
             local h = self.heights[r][c]
             if h > self.maxHeight then self.maxHeight = h end
             if h < self.minHeight then self.minHeight = h end
+        end
+    end
+    for _, row in pairs(self.blocks) do
+        for _, b in pairs(row) do
+            self.maxHeight = math.max(self.maxHeight, b + self.blockSize)
         end
     end
     assert(self.maxHeight < self.heightRange and -self.minHeight < self.heightRange,
@@ -131,12 +189,24 @@ function terrain:setTileHeight(col, row, h)
 
     cell[2] = -h
     self.heights[row][col] = h
+    self.version = self.version + 1   -- lets water.lua notice the land changed
     self:updateExtents()   -- ~10,000 comparisons: instant, and never stale
 
-    local hi, lo = encodeHeight(h)
-    self.heightData:setPixel(col - 1, row - 1, hi, lo, 0, 1)
+    self:writeHeightTexel(col, row)
     self.heightMap:replacePixels(self.heightData)
     self:buildSurfaceMesh()
+end
+
+-- Writes tile (col, row) into the heightmap data:
+--   R, G  ground height + heightBias (high byte, low byte)
+--   B     floating block: 0 = none, else (underside / 8 + 128) / 255,
+--         so undersides from -1016 to +1008 px in 8 px steps
+-- Decoded by terrainAt() in terrainCommon.glsl.
+function terrain:writeHeightTexel(col, row)
+    local hi, lo = encodeHeight(self.heights[row][col])
+    local b = self:blockAt(col, row)
+    local blockByte = b and (b / 8 + 128) / 255 or 0
+    self.heightData:setPixel(col - 1, row - 1, hi, lo, blockByte, 1)
 end
 
 -- Height (px) at the bottom of tile (col, row)'s south wall: the lower of
@@ -162,16 +232,60 @@ end
 -- G = low byte), so they're exact for any whole-pixel height. Decoded in
 -- terrainCommon.glsl.
 function terrain:buildHeightMap()
-    local data = love.image.newImageData(self.cols, self.rows, "rgba8")
+    self.heightData = love.image.newImageData(self.cols, self.rows, "rgba8")  -- kept for single-texel updates
     for r = 1, self.rows do
         for c = 1, self.cols do
-            local hi, lo = encodeHeight(self.heights[r][c])
-            data:setPixel(c - 1, r - 1, hi, lo, 0, 1)
+            self:writeHeightTexel(c, r)
         end
     end
-    self.heightData = data   -- kept so setTileHeight can update single texels
+    local data = self.heightData
     self.heightMap = love.graphics.newImage(data)
     self.heightMap:setFilter("nearest", "nearest")
+end
+
+-- Returns a function quad(x0, y0, x1, y1, face, hTop, hBottom, waterDepth)
+-- that appends one surface-map rectangle (two triangles) to `verts`.
+-- Vertex colour = the surface-map channels: R face, G water depth, B height.
+function terrain:quadWriter(verts)
+    local range = self.heightRange
+    return function(x0, y0, x1, y1, face, hTop, hBottom, waterDepth)
+        local w = (waterDepth or 0) / range
+        local tl = {x0, y0, face, w, hTop / range, 1}
+        local tr = {x1, y0, face, w, hTop / range, 1}
+        local bl = {x0, y1, face, w, hBottom / range, 1}
+        local br = {x1, y1, face, w, hBottom / range, 1}
+        verts[#verts + 1] = tl; verts[#verts + 1] = tr; verts[#verts + 1] = bl
+        verts[#verts + 1] = tr; verts[#verts + 1] = br; verts[#verts + 1] = bl
+    end
+end
+
+-- Emits tile (c, r)'s surface-map quads: its south wall (if any), then its
+-- flat top, then its floating block (if any, and `withBlock` isn't false).
+-- Plain ground (height 0) gets a top only if `groundTop` is true; otherwise
+-- the cleared canvas already says "ground".
+function terrain:emitTile(c, r, quad, groundTop, withBlock)
+    local ts = self.tileSize
+    local H = self:heightAtTile(c, r)
+    local B = self:faceBottom(c, r)
+    local x0, y0 = (c - 1) * ts, (r - 1) * ts
+    if B < H then
+        quad(x0, y0 + ts - H, x0 + ts, y0 + ts - B, 1, H, B)   -- wall: H at top, B at base
+    end
+    if H ~= 0 or groundTop then
+        quad(x0, y0 - H, x0 + ts, y0 - H + ts, 0, H, H)        -- top at height H
+    end
+    if withBlock ~= false then self:emitBlock(c, r, quad) end
+end
+
+-- Emits tile (c, r)'s floating block, if it has one: its front face (a wall
+-- from its top down to its underside, on the tile's south edge), then its top.
+function terrain:emitBlock(c, r, quad)
+    local b = self:blockAt(c, r)
+    if not b then return end
+    local ts, T = self.tileSize, b + self.blockSize
+    local x0, y0 = (c - 1) * ts, (r - 1) * ts
+    quad(x0, y0 + ts - T, x0 + ts, y0 + ts - b, 1, T, b)   -- front face
+    quad(x0, y0 - T, x0 + ts, y0 - T + ts, 0, T, T)        -- top
 end
 
 -- One quad for each tile's top and one for its south face, in back-to-front
@@ -182,42 +296,21 @@ end
 -- EXCEPT ground just in front of a pit: a pit floor is drawn lower than its
 -- own row, so the ground in front has to be drawn over it.
 function terrain:buildSurfaceMesh()
-    local ts, range = self.tileSize, self.heightRange
+    local ts = self.tileSize
     local verts = {}
-
-    local function quad(x0, y0, x1, y1, face, hTop, hBottom)
-        local tl = {x0, y0, face, 0, hTop / range, 1}
-        local tr = {x1, y0, face, 0, hTop / range, 1}
-        local bl = {x0, y1, face, 0, hBottom / range, 1}
-        local br = {x1, y1, face, 0, hBottom / range, 1}
-        for _, v in ipairs({tl, tr, bl, tr, br, bl}) do
-            verts[#verts + 1] = v
-        end
-    end
+    local quad = self:quadWriter(verts)
 
     -- How many rows a pit floor can sink into the rows in front of it.
     local pitReach = math.ceil(-self.minHeight / ts)
 
     for r = 1, self.rows do
         for c = 1, self.cols do
-            local H = self.heights[r][c]
-            local B = self:faceBottom(c, r)
-            local x0, y0 = (c - 1) * ts, (r - 1) * ts
-
-            -- South face: height runs from H at its top edge down to B.
-            if B < H then
-                quad(x0, y0 + ts - H, x0 + ts, y0 + ts - B, 1, H, B)
-            end
-
-            -- Flat top at height H (ground only if a pit behind might show through).
-            local needTop = H ~= 0
+            -- Ground needs a top only if a pit behind might show through.
+            local groundTop = false
             for k = 1, pitReach do
-                if needTop then break end
-                if self:heightAtTile(c, r - k) < 0 then needTop = true end
+                if self:heightAtTile(c, r - k) < 0 then groundTop = true break end
             end
-            if needTop then
-                quad(x0, y0 - H, x0 + ts, y0 - H + ts, 0, H, H)
-            end
+            self:emitTile(c, r, quad, groundTop)
         end
     end
 
@@ -285,23 +378,12 @@ end
 -- nothing else. Built once per level and cached until the terrain changes.
 function terrain:focusMesh(level)
     if self.focusMeshes[level] == nil then
-        local ts, range = self.tileSize, self.heightRange
         local verts = {}
-        local function quad(x0, y0, x1, y1, face, hTop, hBottom)
-            local tl = {x0, y0, face, 0, hTop / range, 1}
-            local tr = {x1, y0, face, 0, hTop / range, 1}
-            local bl = {x0, y1, face, 0, hBottom / range, 1}
-            local br = {x1, y1, face, 0, hBottom / range, 1}
-            for _, v in ipairs({tl, tr, bl, tr, br, bl}) do verts[#verts + 1] = v end
-        end
+        local quad = self:quadWriter(verts)
         for r = 1, self.rows do
             for c = 1, self.cols do
-                local H = self.heights[r][c]
-                if H <= level then
-                    local B = self:faceBottom(c, r)
-                    local x0, y0 = (c - 1) * ts, (r - 1) * ts
-                    if B < H then quad(x0, y0 + ts - H, x0 + ts, y0 + ts - B, 1, H, B) end
-                    quad(x0, y0 - H, x0 + ts, y0 - H + ts, 0, H, H)
+                if self.heights[r][c] <= level then
+                    self:emitTile(c, r, quad, true, false)   -- blocks float above: not part of the pit
                 end
             end
         end
@@ -344,20 +426,26 @@ function terrain:sendUniforms(s, cameraX, cameraY)
 end
 
 -- CPU version of terrainShadow() in terrainCommon.glsl: how much of the sun
--- (0..1) terrain blocks for a world point. Used to darken sprites (player,
--- trees, crops) standing in a cliff's shadow, since the GPU pass only shades
--- terrain pixels. Sprites are small, so a single ray with the far-end soft
--- fade is enough (the shader also fans rays sideways).
+-- (0..1) terrain and floating blocks block for a world point. Used to darken
+-- sprites (player, trees, crops) standing in a cliff's or block's shadow,
+-- since the GPU pass only shades terrain pixels. Sprites are small, so a
+-- single ray with the far-end soft fade is enough (the shader also fans rays
+-- sideways).
 function terrain:sunShadowAmount(wx, wy, h, sunState)
     if not sunState.isUp or h >= self.maxHeight then return 0 end
     local maxDist = math.min((self.maxHeight - h) / sunState.slope, self.sunStep * self.sunSteps)
     local invSoft = 0.5 / math.max(sunState.softness, 1e-4)
+    local ts = self.tileSize
     local lit = 1
     local d = self.sunStep
     while d <= maxDist do
         local rayH = h + d * sunState.slope
-        local tileH = self:heightAtWorld(wx + sunState.dirX * d, wy + sunState.dirY * d)
+        local qx, qy = wx + sunState.dirX * d, wy + sunState.dirY * d
+        local col, row = math.floor(qx / ts) + 1, math.floor(qy / ts) + 1
+        local tileH = self:heightAtTile(col, row)
         local v = math.max(0, math.min(1, 0.5 + (rayH - tileH) / d * invSoft))
+        local b = self:blockAt(col, row)
+        if b and rayH > b and rayH < b + self.blockSize then v = 0 end   -- through a block
         if v < lit then
             lit = v
             if lit <= 0 then return 1 end

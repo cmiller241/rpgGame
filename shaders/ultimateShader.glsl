@@ -39,6 +39,13 @@ uniform float focusRevealOpacity; // how much of the pit shows through higher gr
 uniform float focusPlayerOpacity; // how much of the player shows through it
 uniform float focusDim;           // how much darker/greyer things above him get
 
+uniform float time;               // seconds, for animating water
+uniform Image waterMap;           // 1 texel per tile: water depth / 255 (see water.lua)
+
+// Player standing in water: the part of him below the waterline is tinted.
+uniform float playerWaterLine;    // screen y of the water surface at his position
+uniform float playerWaterDepth;   // how deep the water is at his feet (px); 0 = dry
+
 // Sun (see sun:getState)
 uniform vec2  sunDir;            // ground-plane direction toward the sun
 uniform float sunSlope;          // tan(altitude)
@@ -78,7 +85,7 @@ bool lampVisible(vec3 p) {
         float d = float(i) * LAMP_STEP;
         if (d >= dist) break;
         // +0.5 so a ray grazing along a flat top doesn't hit its own tile
-        if (terrainHeightAt(p.xy + dir * d) > p.z + d * slope + 0.5) return false;
+        if (solidAt(terrainAt(p.xy + dir * d), p.z + d * slope + 0.5)) return false;
     }
     return true;
 }
@@ -96,12 +103,81 @@ vec4 colourGrade(vec4 c) {
     return vec4(graded.rgb, c.a);
 }
 
-// Lights one terrain pixel: elevation, cliff-face light and sun shadow.
+// WATER (see water.lua): surface-map G holds the water depth. Water is
+// drawn by tinting whatever is beneath it, more opaquely the deeper it is,
+// plus a few slowly shifting sparkle pixels.
+const vec3 WATER_SHALLOW = vec3(0.30, 0.62, 0.78);
+const vec3 WATER_DEEP    = vec3(0.08, 0.26, 0.45);
+const float WATER_FULL_DEPTH = 48.0;   // px at which water reaches its deepest colour
+
+// Water tint over `under` for water `depth` px deep. Opacity fades in over
+// the first 2 px (a thin film barely shows), then grows from 45% to 88% as
+// the water gets deeper.
+vec3 waterTint(vec3 under, float depth) {
+    float t = clamp(depth / WATER_FULL_DEPTH, 0.0, 1.0);
+    float opacity = mix(0.45, 0.88, t) * clamp(depth / 2.0, 0.0, 1.0);
+    return mix(under, mix(WATER_SHALLOW, WATER_DEEP, t), opacity);
+}
+
+// PUDDLE SHAPES ("metaballs")
+// Shallow water isn't drawn as whole squares. Each wet tile (from waterMap)
+// adds a soft round blob centred on the tile, (1 - r^2)^2 out to
+// BLOB_RADIUS; a point is water where the blobs add up to PUDDLE_THRESHOLD.
+// With these values:
+//   * a lone wet tile is a circle ~0.9 tiles across,
+//   * two neighbours join into an oval (the join is nearly full width),
+//   * a big patch is solid (four tiles meeting sum to 1.0) with rounded
+//     outer corners,
+//   * tiles touching only at a corner stay separate (they sum to ~0.54).
+// Water is only ever drawn inside wet tiles' squares, so blobs can't spill
+// onto dry ground.
+const float PUDDLE_MAX_DEPTH = 12.0;  // px; deeper water fills its tiles completely
+const float BLOB_RADIUS = 1.0;        // tiles
+const float PUDDLE_THRESHOLD = 0.64;
+
+float wetTile(vec2 tile) {
+    if (tile.x < 0.0 || tile.y < 0.0 || tile.x >= mapTiles.x || tile.y >= mapTiles.y) return 0.0;
+    return Texel(waterMap, (tile + 0.5) / mapTiles).r > 0.0 ? 1.0 : 0.0;
+}
+
+bool insidePuddle(vec2 world) {
+    vec2 t = world / tileSize;          // position in tiles
+    vec2 base = floor(t);
+    float field = 0.0;
+    for (int dy = -1; dy <= 1; dy++) {
+        for (int dx = -1; dx <= 1; dx++) {
+            vec2 tile = base + vec2(float(dx), float(dy));
+            if (wetTile(tile) > 0.0) {
+                float r = length(t - (tile + 0.5)) / BLOB_RADIUS;
+                float k = max(0.0, 1.0 - r * r);
+                field += k * k;
+            }
+        }
+    }
+    return field >= PUDDLE_THRESHOLD;
+}
+
+vec3 waterColour(vec3 under, float depth, vec3 p) {
+    vec3 c = waterTint(under, depth);
+    // Sparkles: a pattern over whole world pixels so they stay crisp.
+    vec2 w = floor(p.xy);
+    float s = sin(w.x * 0.37 + time * 1.3) * sin(w.y * 0.53 - time * 1.1)
+            + 0.5 * sin((w.x + w.y) * 0.21 + time * 0.7);
+    if (s > 1.25) c += vec3(0.22) * clamp(depth / 2.0, 0.0, 1.0);   // faint on thin films too
+    return c;
+}
+
+// Lights one terrain pixel: water, elevation, cliff-face light and sun shadow.
 // `surf` is its surface-map sample; `spriteSun` how much sprite shadow is on it.
 // Returns the lit colour and the pixel's world point (p) for the lamp.
 vec3 lightTerrain(vec3 rgb, vec4 surf, vec2 screenPx, float spriteSun, out vec3 p) {
     bool isFace;
     p = surfacePointFrom(surf, screenPx, isFace);
+
+    float waterDepth = surf.g * heightRange;
+    if (waterDepth > 0.01 && (waterDepth >= PUDDLE_MAX_DEPTH || insidePuddle(p.xy))) {
+        rgb = waterColour(rgb, waterDepth, p);
+    }
 
     rgb *= max(MIN_ELEVATION_LIGHT, 1.0 + p.z * ELEVATION_BRIGHTEN);
     if (isFace) rgb *= faceLight;
@@ -136,6 +212,20 @@ vec4 finishSprite(vec4 pixel, vec2 screenPx) {
     return mix(pixel, colourGrade(pixel), clamp(lampDist / lampRadius, 0.0, 1.0));
 }
 
+// The player's pixel `c` at screenPx: if it's below the waterline, tint it
+// like water that deep, with a lighter line where the surface meets him.
+// Then colour grade it like any sprite.
+vec4 finishPlayer(vec4 c, vec2 screenPx) {
+    if (playerWaterDepth > 0.0) {
+        float below = screenPx.y - playerWaterLine;
+        if (below > 0.0) {
+            c.rgb = waterTint(c.rgb, min(below, playerWaterDepth) + 2.0);
+            if (below < 1.0) c.rgb += vec3(0.18);
+        }
+    }
+    return finishSprite(c, screenPx);
+}
+
 // Pit focus: darker and a little greyer, by `k` (0..1).
 vec3 dimmed(vec3 c, float k) {
     float grey = dot(c, vec3(0.299, 0.587, 0.114));
@@ -158,7 +248,7 @@ vec4 effect(vec4 color, Image texture, vec2 uv, vec2 screenPx) {
         result = finishTerrain(pixel, p, spriteShadow.g > 0.0);
     } else {
         // ---- Opaque sprite ----
-        result = finishSprite(objectPixel, screenPx);
+        result = isPlayer ? finishPlayer(objectPixel, screenPx) : finishSprite(objectPixel, screenPx);
     }
 
     // PIT FOCUS (the player is below ground level; see lighting.lua).
@@ -168,8 +258,10 @@ vec4 effect(vec4 color, Image texture, vec2 uv, vec2 screenPx) {
         if (isTerrain) {
             // Above his level? Walls below ground level count as part of the
             // pit (its back wall), so only walls above ground are "above".
-            bool isFace = Texel(surfaceMap, uv).r > 0.5;
-            aboveHim = isFace ? (p.z > 0.5) : (p.z > focusLevel + 0.5);
+            // Water counts by the ground under it, so water in his pit is in focus.
+            vec4 s = Texel(surfaceMap, uv);
+            float groundZ = p.z - s.g * heightRange;
+            aboveHim = (s.r > 0.5) ? (p.z > 0.5) : (groundZ > focusLevel + 0.5);
         } else {
             aboveHim = !isPlayer;           // trees, crops, pages up on the ground
         }
@@ -186,7 +278,7 @@ vec4 effect(vec4 color, Image texture, vec2 uv, vec2 screenPx) {
             under = finishTerrain(under, fp, false);
             float opacity = focusRevealOpacity;
             if (xray.a > 0.5) {
-                under = finishSprite(xray, screenPx);
+                under = finishPlayer(xray, screenPx);
                 opacity = focusPlayerOpacity;
             }
             result.rgb = mix(result.rgb, under.rgb, opacity * focusAmount);
@@ -201,7 +293,7 @@ vec4 effect(vec4 color, Image texture, vec2 uv, vec2 screenPx) {
     // this spot. Blend in his silhouette, coloured the way a visible sprite
     // pixel here would be. (Skipped where pit focus already reveals him.)
     if (!revealed && ghostOpacity > 0.0 && xray.a > 0.5 && objectPixel.a < 0.5) {
-        vec4 ghost = finishSprite(xray, screenPx);
+        vec4 ghost = finishPlayer(xray, screenPx);
         result.rgb = mix(result.rgb, ghost.rgb, ghostOpacity * xray.a);
     }
     return result;

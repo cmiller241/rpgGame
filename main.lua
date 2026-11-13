@@ -38,6 +38,7 @@ local shader       = require("src.shader")
 local sun          = require("src.sun")
 local sprites      = require("src.sprites")
 local terrain      = require("src.terrain")
+local water        = require("src.water")
 local spriteShadow = require("src.spriteShadow")
 local lighting     = require("src.lighting")
 local tiles        = require("src.tiles")
@@ -139,6 +140,7 @@ function love.update(dt)
         ui:update(fixedDt) -- Update UI animations
         message:update(fixedDt) -- Update message typing
         growCrops()
+        water:update(fixedDt)   -- water flows (sleeps once settled) and slowly evaporates
 
         -- Update object animations
         for _, obj in ipairs(object.objects) do
@@ -190,6 +192,7 @@ function love.draw()
     -- 1. Sun/lamp state for this frame, and the terrain's shape on screen.
     lighting:begin()
     terrain:drawSurfaceMap(cameraX, cameraY)
+    water:drawSurfaceOverlay(cameraX, cameraY)
 
     -- Which row each Bible page and the player belong to.
     local pagesByRow = {}
@@ -217,11 +220,12 @@ function love.draw()
         local yC = firstTileY + y
         if yC >= 1 and yC <= #mapArray then
             rowCount = rowCount + 1
-            local row = rows[rowCount] or { items = {}, occluders = {} }
+            local row = rows[rowCount] or { items = {}, occluders = {}, blocks = {} }
             rows[rowCount] = row
-            local items, occluders = row.items, row.occluders
+            local items, occluders, blocks = row.items, row.occluders, row.blocks
             for i = #items, 1, -1 do items[i] = nil end
             for i = #occluders, 1, -1 do occluders[i] = nil end
+            for i = #blocks, 1, -1 do blocks[i] = nil end
 
             for x = -MARGIN_TILES, tilesHorizontal + MARGIN_TILES do
                 local xC = firstTileX + x
@@ -253,6 +257,14 @@ function love.draw()
                         if def.flourish then grass:addFlourish(xC, yC, z, screenX, screenY, fb) end
                     end
                     if def.addSprites then def.addSprites(items, xC, yC, z, screenX, screenY, tile) end
+
+                    -- Floating block: front face, then top, over this tile.
+                    local bottom = terrain:blockAt(xC, yC)
+                    if bottom then
+                        sprites.tileBatch:add(sprites.blockFrontQuad, screenX, screenY - bottom)
+                        sprites.tileBatch:add(sprites.blockTopQuad, screenX, screenY - bottom - ts)
+                        blocks[#blocks + 1] = { screenX, screenY - bottom - ts, ts, 2 * ts }
+                    end
                 end
             end
 
@@ -286,10 +298,31 @@ function love.draw()
         end
 
         table.sort(row.items, bySortKey)
-        for _, item in ipairs(row.items) do
-            local tint = lighting:objectTint(item.tintX, item.tintY, item.tintZ, item.caster)
-            item.owner:drawItem(item, tint)
+        local function drawItems(last)
+            for _, item in ipairs(row.items) do
+                if (item.drawLast or false) == last then
+                    local tint = lighting:objectTint(item.tintX, item.tintY, item.tintZ, item.caster)
+                    item.owner:drawItem(item, tint)
+                end
+            end
         end
+        drawItems(false)
+
+        -- Floating blocks in this row are in front of everything else in the
+        -- row (they span the whole tile, back to front edge), so they hide
+        -- what's been drawn behind them. Anyone standing ON a block in this row
+        -- (item.drawLast) is drawn afterwards, on top.
+        if #row.blocks > 0 then
+            love.graphics.setCanvas(canvas.object)
+            love.graphics.setBlendMode("replace")
+            love.graphics.setColor(0, 0, 0, 0)
+            for _, b in ipairs(row.blocks) do
+                love.graphics.rectangle("fill", b[1], b[2], b[3], b[4])
+            end
+            love.graphics.setBlendMode("alpha")
+            love.graphics.setColor(1, 1, 1, 1)
+        end
+        drawItems(true)
     end
 
     -- 5. Ground tiles (and the pit layer, if the player is in a pit).
@@ -300,6 +333,7 @@ function love.draw()
         love.graphics.setCanvas(canvas.focus)
         love.graphics.draw(sprites.focusBatch)
         terrain:drawFocusSurface(focus.level, cameraX, cameraY)
+        water:drawFocusOverlay(focus.level, cameraX, cameraY)
     end
 
     -- 6. Lighting, shadows and colour grading.

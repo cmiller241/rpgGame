@@ -28,15 +28,35 @@ uniform float sunSoftness;       // apparent size of the sun (see sun.softness);
 const float SUN_STEP  = 3.0;     // px per step
 const int   SUN_STEPS = 160;     // => shadows up to 480 px long
 
-// Height in px of the tile under a world-space point (negative in a pit).
-// Off-map = 0.
-float terrainHeightAt(vec2 world) {
+// Floating blocks are BLOCK_SIZE px cubes (terrain.blockSize).
+const float BLOCK_SIZE = 32.0;
+const float NO_BLOCK = -100000.0;
+
+// What's on the tile under a world-space point:
+//   x = ground height in px (negative in a pit)
+//   y = underside of its floating block in px, or NO_BLOCK
+// Off-map = flat ground, no block. (Encoding: terrain:writeHeightTexel.)
+vec2 terrainAt(vec2 world) {
     vec2 tile = floor(world / tileSize);
     if (tile.x < 0.0 || tile.y < 0.0 || tile.x >= mapTiles.x || tile.y >= mapTiles.y) {
-        return 0.0;
+        return vec2(0.0, NO_BLOCK);
     }
     vec4 t = Texel(heightMap, (tile + 0.5) / mapTiles);
-    return floor(t.r * 255.0 + 0.5) * 256.0 + floor(t.g * 255.0 + 0.5) - heightBias;
+    float ground = floor(t.r * 255.0 + 0.5) * 256.0 + floor(t.g * 255.0 + 0.5) - heightBias;
+    float blockByte = floor(t.b * 255.0 + 0.5);
+    float block = blockByte > 0.0 ? (blockByte - 128.0) * 8.0 : NO_BLOCK;
+    return vec2(ground, block);
+}
+
+// Ground height in px of the tile under a world-space point.
+float terrainHeightAt(vec2 world) {
+    return terrainAt(world).x;
+}
+
+// Is a ray at height h, over a tile described by `t` (from terrainAt),
+// inside that tile's terrain or floating block?
+bool solidAt(vec2 t, float h) {
+    return h < t.x || (h > t.y && h < t.y + BLOCK_SIZE);
 }
 
 // Turns a surface-map sample `s` for screen pixel `screenPx` into the
@@ -63,7 +83,8 @@ vec3 surfacePoint(vec2 screenPx, out bool isFace) {
 // 1 = fully shadowed, in between = soft edge (penumbra).
 //
 // Walks from p toward the sun across the ground plane; the ray climbs
-// `slope` px for every px travelled. A tile taller than the ray blocks it.
+// `slope` px for every px travelled. A tile taller than the ray blocks it,
+// and so does a floating block the ray passes through.
 // That alone makes taller cliffs cast longer shadows and low suns cast longer
 // shadows, but gives a hard yes/no edge. Two things soften it:
 //
@@ -104,12 +125,18 @@ float terrainShadow(vec3 p, vec2 dir, float slope, bool isFace) {
             qA.y = max(qA.y, p.y); qB.y = max(qB.y, p.y);
             qC.y = max(qC.y, p.y); qD.y = max(qD.y, p.y);
         }
-        vec4 h = vec4(terrainHeightAt(qA), terrainHeightAt(qB),
-                      terrainHeightAt(qC), terrainHeightAt(qD));
+        vec2 tA = terrainAt(qA), tB = terrainAt(qB), tC = terrainAt(qC), tD = terrainAt(qD);
+        vec4 h = vec4(tA.x, tB.x, tC.x, tD.x);
 
         // Clearance angle (rayH - h) / d mapped onto the sun's size:
         // -sunSoftness -> 0 (fully blocked), +sunSoftness -> 1 (fully clear).
         vec4 v = clamp(0.5 + (rayH - h) / d * invSoft, 0.0, 1.0);
+
+        // A ray passing through a floating block is fully blocked.
+        vec4 bottoms = vec4(tA.y, tB.y, tC.y, tD.y);
+        vec4 inBlock = step(bottoms, vec4(rayH)) * step(vec4(rayH), bottoms + BLOCK_SIZE);
+        v *= 1.0 - inBlock;
+
         lit = min(lit, v);
 
         if (max(max(lit.x, lit.y), max(lit.z, lit.w)) <= 0.0) return 1.0;  // all four fully blocked

@@ -25,4 +25,4 @@ Time of day lives in `src/sun.lua` (`sun.angle`: 0 = sunrise, 90 = noon, 180 = s
 - Every file in `src/` is a module: it returns a table, and other files `require` it. There are no shared globals.
 - `src/tiles.lua` defines every tile type: what is drawn on it, what sprite stands on it, and what part of it is solid. Add a tile type there.
 - `love . --shots` renders a set of fixed scenes (sun angle, position, zoom) to PNGs plus a contact sheet. `love . --bench` prints the frame time for each scene. Both are defined in `src/devtools.lua` and write to the LÖVE save directory.
-- Keys: arrows move, Space jumps, F uses a tool or picks up a page, Q / Shift+Q raise / lower the outlined tile (Hoe selected), A/S choose a toolbar slot, Z/X zoom, M/N scrub the time of day, C shows the surface map.
+- Keys: arrows move, Space jumps, F uses a tool or picks up a page, Q / Shift+Q raise / lower the outlined tile, W pours water on it, E places / removes a floating block over it (Hoe selected), A/S choose a toolbar slot, Z/X zoom, M/N scrub the time of day, C shows the surface map.

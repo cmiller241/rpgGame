@@ -14,6 +14,7 @@ local spriteShadow = require("src.spriteShadow")
 local sprites = require("src.sprites")
 local sun = require("src.sun")
 local terrain = require("src.terrain")
+local water = require("src.water")
 
 lighting.lampRadius = 100     -- px, how far the player's lamp reaches
 lighting.lampHeight = 24      -- px above the player's feet (roughly hand height)
@@ -106,6 +107,15 @@ function lighting:composite(cameraX, cameraY)
     s:send("focusRevealOpacity", self.focusRevealOpacity)
     s:send("focusPlayerOpacity", self.focusPlayerOpacity)
     s:send("focusDim", self.focusDim)
+    s:send("time", love.timer.getTime())
+    s:send("waterMap", water.map)
+
+    -- Player in water: how deep it is at his feet, and where the surface
+    -- line falls on screen (his feet are 4 px above player.y in the art).
+    local feetScreenY = player.drawY - 4 + player.drawZ - cameraY
+    local depthAtFeet = water:depthAtFeet(player.drawX + 16, player.drawY - 4, -player.drawZ)
+    s:send("playerWaterDepth", depthAtFeet)
+    s:send("playerWaterLine", feetScreenY - depthAtFeet)
 
     s:send("sunDir", {sunState.dirX, sunState.dirY})
     s:send("sunSlope", sunState.slope)

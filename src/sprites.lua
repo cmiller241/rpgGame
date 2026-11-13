@@ -3,7 +3,20 @@ local sprites = {}
 package.loaded[...] = sprites  -- register now, so modules that require each other share this table
 
 -- Load images
-sprites.land = love.graphics.newImage("img/sprites2.png")
+
+-- The ground tile sheet. Floating-block art (img/block.png: 32x64, top face
+-- above front face) is appended underneath it at load time, so blocks can
+-- go in the same tile batch as everything else (one texture per batch).
+-- Existing tile numbers are unchanged; see sprites.blockTopQuad below.
+do
+    local sheet = love.image.newImageData("img/sprites2.png")
+    local block = love.image.newImageData("img/block.png")
+    local combined = love.image.newImageData(sheet:getWidth(), sheet:getHeight() + block:getHeight())
+    combined:paste(sheet, 0, 0, 0, 0, sheet:getWidth(), sheet:getHeight())
+    combined:paste(block, 0, sheet:getHeight(), 0, 0, block:getWidth(), block:getHeight())
+    sprites.land = love.graphics.newImage(combined)
+    sprites.blockSheetY = sheet:getHeight()   -- where the block art starts in sprites.land
+end
 sprites.crop = love.graphics.newImage("img/crop.png")
 -- All ground tiles for a frame (grass, dirt, cliff faces) go into this one
 -- batch and are drawn in a single call. Grows automatically if needed.
@@ -40,6 +53,10 @@ for i = 1, math.ceil(sprites.land:getHeight() / sprites.size) do
             love.graphics.newQuad((j-1) * sprites.size, (i-1) * sprites.size, sprites.size, sprites.size, sprites.land:getDimensions())
     end
 end
+
+-- Floating block faces (see the note at the top of this file).
+sprites.blockTopQuad   = love.graphics.newQuad(0, sprites.blockSheetY, 32, 32, sprites.land:getDimensions())
+sprites.blockFrontQuad = love.graphics.newQuad(0, sprites.blockSheetY + 32, 32, 32, sprites.land:getDimensions())
 
 -- Load quads for crops
 sprites.cropQuads = {}
