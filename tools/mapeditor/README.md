@@ -51,7 +51,23 @@ tiles look exactly as before.
 | 3   | Block   | place a floating block (underside) | remove it              |
 | 4   | Water   | add / set water depth              | remove water           |
 | 5   | Objects | select, drag, or add an object     | delete the object      |
+| 6   | Ridge   | drag out a ridge                   | drag out a valley      |
+| 7   | Smooth  | soften heights under the brush     | level the brush area   |
 
+- **Ridge** (6): drag from one end to the other to raise a long ridge. Its
+  height climbs to a peak and back down along the drag, in 8 px steps (so
+  you can walk up it), and it's flat across its width, so its long sides are
+  cliff faces wherever it's 32 px or more high. Options: width (tiles), peak
+  height, where the peak is along the drag, and the profile (Peak: straight
+  up to a point; Rounded: a smooth hump; Plateau: climbs, runs flat,
+  descends). It only ever raises ground, so ridges can cross or run into
+  hills; right-drag cuts a valley of the same shape. The preview while
+  dragging is the real thing, and the whole ridge is one undo step.
+- **Smooth** (7): each tile under the brush moves toward the average height
+  of its 3x3 neighbourhood (Gentle: halfway, Full: all the way), turning
+  cliffs into slopes and evening out bumps; click again to smooth more.
+  Right-drag levels the brush area to its average height. Use the brush
+  size (1x1, 3x3, 5x5) for the area.
 - **Alt+click** picks up the value under the cursor (tile type, height, block
   underside or water depth) for the current tool.
 - **[ ]** change the brush (1×1, 3×3, 5×5). Wheel zooms, middle-drag or

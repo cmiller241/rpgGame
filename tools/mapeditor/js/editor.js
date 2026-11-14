@@ -40,6 +40,11 @@
         waterMode: "add",        // add | set
         waterAmount: 8,
         newObjectType: "page",
+        ridgeWidth: 3,           // tiles across
+        ridgePeak: 72,           // px at the top
+        ridgeProfile: "peak",    // peak | round | plateau
+        ridgePeakAt: 50,         // % of the way along the drag where the top is
+        smoothStrength: 1,       // 0.5 = gentle, 1 = full
         brush: 1,
         show: { grid: true, heights: true, water: true, blocks: true, objects: true, slopes: true },
         hover: null,             // { c, r, wx, wy }
@@ -121,7 +126,7 @@
     const undoStack = [], redoStack = [];
     let stroke = null;
 
-    function beginStroke() { stroke = { cells: new Map(), objectsBefore: null }; }
+    function beginStroke() { stroke = { cells: new Map(), objectsBefore: null }; strokeTouched = new Set(); }
 
     // Sets layer[r][c] = value, remembering the first old value this stroke.
     function setCell(layer, c, r, value) {
@@ -187,6 +192,7 @@
     // (opposite) action.
     function applyTool(c, r, alt) {
         const m = state.map;
+        if (state.tool === "smooth") { applySmooth(c, r, alt); return; }
         for (const [cc, rr] of brushTiles(c, r)) {
             const key = cc + ":" + rr;
             if (strokeTouched.has(key)) continue;
@@ -225,6 +231,146 @@
         requestDraw();
     }
 
+    // ------------------------------------------------------------------
+    // Smooth tool
+    // ------------------------------------------------------------------
+    //
+    // SMOOTH (left): each tile under the brush moves toward the average
+    // height of itself and its 8 neighbours (by smoothStrength), so cliffs
+    // soften into slopes and bumps even out. New heights are all worked out
+    // from the heights as they were, then written, so the result doesn't
+    // depend on the order tiles are visited. Like the other tools, each tile
+    // changes once per drag; click again to smooth further.
+    // LEVEL (right): every tile under the brush goes to the average height of
+    // the tiles under the brush (once per drag), flattening a patch.
+    // Heights are whole pixels; ground never rises into a floating block.
+
+    function setGround(c, r, h) {
+        const b = state.map.blocks[r][c];
+        if (b != null && h > b) h = b;
+        setCell("heights", c, r, Math.max(-512, Math.min(1000, Math.round(h))));
+    }
+
+    function applySmooth(c, r, level) {
+        const m = state.map, H = m.heights;
+        const tiles = brushTiles(c, r).filter(([cc, rr]) => !strokeTouched.has(cc + ":" + rr));
+        if (tiles.length === 0) return;
+        if (level) {
+            let sum = 0;
+            const all = brushTiles(c, r);
+            for (const [cc, rr] of all) sum += H[rr][cc];
+            const avg = sum / all.length;
+            for (const [cc, rr] of tiles) { strokeTouched.add(cc + ":" + rr); setGround(cc, rr, avg); }
+        } else {
+            const next = tiles.map(([cc, rr]) => {
+                let sum = 0, n = 0;
+                for (let dr = -1; dr <= 1; dr++) for (let dc = -1; dc <= 1; dc++) {
+                    const row = H[rr + dr];
+                    if (row && row[cc + dc] != null) { sum += row[cc + dc]; n++; }
+                }
+                const h = H[rr][cc];
+                return h + (sum / n - h) * state.smoothStrength;
+            });
+            tiles.forEach(([cc, rr], i) => { strokeTouched.add(cc + ":" + rr); setGround(cc, rr, next[i]); });
+        }
+        ext = extents();
+        requestDraw();
+    }
+
+    // ------------------------------------------------------------------
+    // Ridge tool
+    // ------------------------------------------------------------------
+    //
+    // Drag from one end of a ridge to the other: a long raised spine whose
+    // height climbs to a peak and comes back down along its length, flat
+    // across its width (so its long sides are cliff faces once it's 32 px or
+    // more above the ground, and gentle slopes near its low ends).
+    //
+    // While dragging, the ridge is written into the map for real (so it's
+    // drawn with its real cliffs and slopes): each mouse move first puts
+    // back what the previous preview changed, then applies the new shape,
+    // all inside one stroke, so letting go leaves a single undo step.
+
+    const HEIGHT_STEP = 8;     // ridge heights are whole multiples of this
+
+    // Tiles on the line from (c0, r0) to (c1, r1) (Bresenham), start to end.
+    // Where the line steps diagonally, the tile beside the corner is added
+    // too, so consecutive tiles always share an edge: tiles that only touch
+    // at a corner can't slope into each other, so a diagonal ridge would
+    // otherwise be a row of separate little cliffs.
+    function lineTiles(c0, r0, c1, r1) {
+        const out = [];
+        const dc = Math.abs(c1 - c0), dr = -Math.abs(r1 - r0);
+        const sc = c0 < c1 ? 1 : -1, sr = r0 < r1 ? 1 : -1;
+        let err = dc + dr, c = c0, r = r0;
+        for (;;) {
+            out.push([c, r]);
+            if (c === c1 && r === r1) break;
+            const e2 = 2 * err;
+            const stepC = e2 >= dr, stepR = e2 <= dc;
+            if (stepC) { err += dr; c += sc; }
+            if (stepR) { err += dc; r += sr; }
+            if (stepC && stepR) out.push([c, r - sr]);             // fill the corner
+        }
+        return out;
+    }
+
+    // How high the ridge is (0..1 of its peak) at fraction t (0..1) of its
+    // length, for the chosen profile and peak position.
+    function ridgeProfile(t) {
+        const p = Math.min(0.95, Math.max(0.05, state.ridgePeakAt / 100));
+        const u = t <= p ? t / p : (1 - t) / (1 - p);          // 0 at the ends, 1 at the peak
+        if (state.ridgeProfile === "round") return Math.sin(u * Math.PI / 2);   // smooth hump
+        if (state.ridgeProfile === "plateau") return Math.min(1, u / 0.4);      // climb, flat top, descend
+        return u;                                                               // straight up to a point
+    }
+
+    // The ridge from tile `a` to tile `b`: Map "c:r" -> {c, r, h} (h in px).
+    function ridgePlan(a, b) {
+        const m = state.map;
+        const path = lineTiles(a.c, a.r, b.c, b.r);
+        const n = path.length;
+        const across = Math.abs(b.c - a.c) >= Math.abs(b.r - a.r) ? [0, 1] : [1, 0];   // spread sideways to the drag
+        const w = Math.max(1, Math.min(9, Math.round(state.ridgeWidth)));
+        const lo = -Math.floor((w - 1) / 2);
+        const plan = new Map();
+        path.forEach(([c, r], i) => {
+            const t = (i + 0.5) / n;                                // tile centres, so the ends aren't 0
+            const h = Math.max(HEIGHT_STEP, Math.round(state.ridgePeak * ridgeProfile(t) / HEIGHT_STEP) * HEIGHT_STEP);
+            for (let k = lo; k < lo + w; k++) {
+                const cc = c + across[0] * k, rr = r + across[1] * k;
+                if (rr < 0 || rr >= m.height || cc < 0 || cc >= m.width) continue;
+                const key = cc + ":" + rr;
+                const prev = plan.get(key);
+                if (!prev || h > prev.h) plan.set(key, { c: cc, r: rr, h });
+            }
+        });
+        return plan;
+    }
+
+    // Puts back every cell the current stroke has changed (the last preview).
+    function revertStroke() {
+        if (!stroke) return;
+        for (const ch of stroke.cells.values()) state.map[ch.layer][ch.r][ch.c] = ch.old;
+    }
+
+    // Writes the ridge from `a` to `b` into the map. Raising only ever raises
+    // ground (so ridges can cross each other or run into hills); `lower`
+    // (right-drag) cuts a valley the same shape below ground level instead.
+    function applyRidge(a, b, lower) {
+        const m = state.map;
+        revertStroke();
+        for (const { c, r, h } of ridgePlan(a, b).values()) {
+            const old = m.heights[r][c];
+            let nh = lower ? Math.min(old, -h) : Math.max(old, h);
+            const blk = m.blocks[r][c];
+            if (blk != null && nh > blk) nh = blk;                  // ground can't rise into a block
+            setCell("heights", c, r, nh);
+        }
+        ext = extents();
+        requestDraw();
+    }
+
     // Alt+click: copy the value under the cursor into the current tool.
     function pickValue(c, r) {
         const m = state.map;
@@ -232,6 +378,7 @@
         if (state.tool === "height") { state.heightMode = "set"; state.heightValue = m.heights[r][c]; }
         if (state.tool === "block" && m.blocks[r][c] != null) state.blockBottom = m.blocks[r][c] - m.heights[r][c];
         if (state.tool === "water") { state.waterMode = "set"; state.waterAmount = m.water[r][c]; }
+        if (state.tool === "ridge" && m.heights[r][c] > 0) state.ridgePeak = m.heights[r][c];
         buildToolOptions();
     }
 
@@ -352,7 +499,8 @@
         if (state.hover && state.tool !== "objects") {
             ctx.lineWidth = 2 / z;
             ctx.strokeStyle = "#ffeb3b";
-            for (const [cc, rr] of brushTiles(state.hover.c, state.hover.r)) {
+            const outlined = state.tool === "ridge" ? [[state.hover.c, state.hover.r]] : brushTiles(state.hover.c, state.hover.r);
+            for (const [cc, rr] of outlined) {
                 if (state.view === "flat") {
                     ctx.strokeRect(cc * TS, rr * TS, TS, TS);
                 } else {
@@ -432,6 +580,11 @@
         if (!t) return;
         if (e.altKey) { pickValue(t.c, t.r); mouse.down = false; return; }
         beginStroke();
+        if (state.tool === "ridge") {
+            mouse.ridgeStart = t;
+            applyRidge(t, t, alt);
+            return;
+        }
         strokeTouched = new Set();
         applyTool(t.c, t.r, alt);
     });
@@ -450,12 +603,20 @@
             if (!mouse.down) { state.hover = null; updateHover(); requestDraw(); }
             return;
         }
+        // While dragging a ridge, find the tile under the cursor with the
+        // preview taken out, so the growing ridge doesn't change which tile
+        // that is (the drag end would jitter).
+        const ridging = mouse.down && state.tool === "ridge" && mouse.ridgeStart;
+        if (ridging) revertStroke();
         const t = pickTile(px, py);
         const w = toWorld(px, py);
         state.hover = t ? { c: t.c, r: t.r, wx: w.x, wy: w.y } : null;
         updateHover();
 
-        if (mouse.down && state.tool === "objects" && mouse.dragObject) {
+        if (ridging) {
+            if (t) mouse.ridgeEnd = t;
+            applyRidge(mouse.ridgeStart, mouse.ridgeEnd || mouse.ridgeStart, mouse.button === 2);
+        } else if (mouse.down && state.tool === "objects" && mouse.dragObject) {
             const g = groundPoint(px, py);
             mouse.dragObject.x = Math.round(g.x + mouse.dragOffset.x);
             mouse.dragObject.y = Math.round(g.y + mouse.dragOffset.y);
@@ -471,6 +632,8 @@
         if (mouse.down) {
             mouse.down = false;
             mouse.dragObject = null;
+            mouse.ridgeStart = null;
+            mouse.ridgeEnd = null;
             endStroke();
             refreshPanels();
         }
@@ -485,7 +648,7 @@
     // Keyboard
     // ------------------------------------------------------------------
 
-    const TOOL_KEYS = { "1": "tile", "2": "height", "3": "block", "4": "water", "5": "objects" };
+    const TOOL_KEYS = { "1": "tile", "2": "height", "3": "block", "4": "water", "5": "objects", "6": "ridge", "7": "smooth" };
 
     window.addEventListener("keydown", (e) => {
         const typing = ["INPUT", "TEXTAREA", "SELECT"].includes(document.activeElement.tagName);
@@ -614,6 +777,17 @@
             h3.textContent = "Floating block";
             box.appendChild(numberInput("Gap above ground (px)", state.blockBottom, v => state.blockBottom = v, 8));
             box.appendChild(hint("Places a 32 px block this far above the tile's ground. 24 = easy to jump onto; 64+ = can walk under. Right-click removes."));
+        } else if (state.tool === "smooth") {
+            h3.textContent = "Smooth";
+            box.appendChild(radioRow([[0.5, "Gentle"], [1, "Full"]], state.smoothStrength, v => state.smoothStrength = v));
+            box.appendChild(hint("Drag over ground to soften it: each tile moves toward the average height of its 3x3 neighbourhood (Gentle: halfway). Cliffs turn into slopes, bumps even out. Click again to smooth more. Right-drag levels: every tile under the brush goes to their average height. Use the brush size (1x1, 3x3, 5x5) to set the area."));
+        } else if (state.tool === "ridge") {
+            h3.textContent = "Ridge";
+            box.appendChild(radioRow([["peak", "Peak"], ["round", "Rounded"], ["plateau", "Plateau"]], state.ridgeProfile, v => state.ridgeProfile = v));
+            box.appendChild(numberInput("Width (tiles)", state.ridgeWidth, v => state.ridgeWidth = Math.max(1, Math.min(9, Math.round(v))), 1));
+            box.appendChild(numberInput("Peak height (px)", state.ridgePeak, v => state.ridgePeak = Math.max(8, Math.round(v / 8) * 8), 8));
+            box.appendChild(numberInput("Peak at (% along)", state.ridgePeakAt, v => state.ridgePeakAt = Math.max(5, Math.min(95, v)), 5));
+            box.appendChild(hint("Drag from one end of the ridge to the other. Its height climbs to the peak and back down along the drag, flat across its width, so the long sides are cliffs once they're 32 px or more up. Peak: straight up to a point. Rounded: a smooth hump. Plateau: climbs, runs flat, descends. Only raises ground; right-drag cuts a valley instead. Alt+click: use that tile's height as the peak."));
         } else if (state.tool === "water") {
             h3.textContent = "Water";
             box.appendChild(radioRow([["add", "Add"], ["set", "Set"]], state.waterMode, v => state.waterMode = v));
@@ -902,7 +1076,9 @@
     window.addEventListener("resize", resize);
 
     // Exposed for automated checks (and the browser console).
-    window.editor = { state, loadText, serialize: () => LuaData.serialize(state.map), setView, setTool, setZoom, applyTool, beginStroke, endStroke, undo, redo, requestDraw };
+    window.editor = { state, loadText, serialize: () => LuaData.serialize(state.map), setView, setTool, setZoom, applyTool, beginStroke, endStroke, undo, redo, requestDraw,
+        // Draws a ridge from tile a to tile b ({c, r}, 0-based) as one undo step (for tests).
+        ridge: (a, b, lower) => { beginStroke(); applyRidge(a, b, lower); endStroke(); } };
 
     setTool("tile");
     setView("height");

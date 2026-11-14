@@ -1,0 +1,32 @@
+{
+    // Live Server reloads the open page whenever a workspace file changes.
+    // The map editor (tools/mapeditor) only needs a reload when its own
+    // files change, not when the game's code, art or maps do (saving a map
+    // from the editor writes maps/*.lua, which would reload it mid-session).
+    "liveServer.settings.ignoreFiles": [
+        ".vscode/**",
+        "**/*.lua",
+        "**/*.glsl",
+        "**/*.png",
+        "**/*.jpg",
+        "**/*.clip",
+        "**/*.md",
+        "**/*.mp3",
+        "**/*.wav",
+        "**/*.ttf",
+        "**/*.docx",
+        "src/**",
+        "maps/**",
+        "shaders/**",
+        "img/**",
+        "sound/**",
+        "font/**",
+        "js/**",
+        "dist/**",
+        "archive/**",
+        "node_modules/**",
+        "tools/*.mjs",
+        "*.json",
+        "index.html"
+    ]
+}

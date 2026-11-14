@@ -6,7 +6,8 @@
 --
 -- A tile's wall runs from its own height H down to terrain:faceBottom(),
 -- which is the lower of ground level and the tile in front of it. It's drawn
--- as a column of 32 px face sprites from the bottom row up. Examples:
+-- as a column of 32 px face sprites stacked down from its top (so the top
+-- piece, whose grass tufts over the edge, is always flush with it). Examples:
 --   * a 2-tile cliff on flat ground: wall from 64 down to 0, two rows
 --   * the same cliff with a 1-deep pit in front: from 64 down to -32, three rows
 --   * a ground tile behind a 1-deep pit: from 0 down to -32 (the pit's back wall)
@@ -68,12 +69,17 @@ function mountain:add(xC, yC, z, screenX, screenY, batch)
     local bottom = terrain:faceBottom(xC, yC)
     if bottom >= top then return end              -- nothing lower in front: no wall
 
-    -- Wall height in whole tiles (rounded up; a partial top row is covered
-    -- by the tile's own top, which is drawn after it).
+    -- Wall height in whole 32 px pieces, rounded up. The pieces are stacked
+    -- DOWN FROM THE TOP, so the top piece (with the grass tufting over the
+    -- edge) always sits flush with the wall's top, whatever its height. When
+    -- the height isn't a whole number of pieces, the lowest piece hangs below
+    -- the wall's foot, where the tile in front (drawn later) covers it.
+    -- (Whole-tile walls come out exactly as stacking up from the bottom.)
     local rows = math.ceil((top - bottom) / ts - 1e-6)
 
-    -- Which face sprite each row uses. Row 0 is the bottom of the wall,
-    -- row rows-1 the top (just under the tile's own surface).
+    -- Which face sprite each piece uses. Piece 0 is the lowest, piece
+    -- rows-1 the top one, just under the tile's own surface.
+    local function bandBottomOf(row, wallTop, count) return wallTop - (count - row) * ts end
     local quads = {}
     for row = 0, rows - 1 do
         local quad
@@ -87,38 +93,36 @@ function mountain:add(xC, yC, z, screenX, screenY, batch)
             quad = FACE_MIDDLE
         end
 
-        local bandBottom = bottom + row * ts      -- height of this row's lower edge
+        local bandBottom = bandBottomOf(row, top, rows)    -- height of this piece's lower edge
         if wallCovers(xC + 1, yC, bandBottom) then quad = quad + 1 end
         if wallCovers(xC - 1, yC, bandBottom) then quad = quad + 2 end
         quads[row] = quad
     end
     local gradient = sprites.spritesQuads[FACE_GRADIENT]
-    local gradientY = screenY - bottom - (rows - 1) * ts
 
     if k[3] == k[4] then
         for row = 0, rows - 1 do
-            batch:add(sprites.spritesQuads[quads[row]], screenX, screenY - (bottom + row * ts))
+            batch:add(sprites.spritesQuads[quads[row]], screenX, screenY - bandBottomOf(row, top, rows))
         end
-        -- Shading gradient over the full wall, stretched to its height.
-        batch:add(gradient, screenX, gradientY, 0, 1, rows)
+        -- Shading gradient over the full wall (from its top), stretched to its height.
+        batch:add(gradient, screenX, screenY + ts - top, 0, 1, rows)
         return
     end
 
-    -- Slanted top edge: column by column, cut at the edge's height.
+    -- Slanted top edge: column by column, each column's pieces stacked down
+    -- from the edge's height there (so the tufts follow the slant). A column
+    -- lower than the tallest one uses the pieces nearest the top.
     for u = 0, ts - 1 do
         local f = (u + 0.5) / ts
         local topU = math.floor(k[3] + (k[4] - k[3]) * f + 0.5)
         if topU > bottom then
-            for row = 0, rows - 1 do
-                local bandBottom = bottom + row * ts
-                if topU > bandBottom then
-                    local skip = math.max(0, bandBottom + ts - topU)   -- source rows above the edge
-                    sprites.addColumn(batch, sprites.spritesQuads[quads[row]], u, skip,
-                        screenX + u, screenY - bandBottom + skip, 1)
-                end
+            local rowsU = math.ceil((topU - bottom) / ts - 1e-6)
+            for row = 0, rowsU - 1 do
+                local quad = quads[rows - rowsU + row]
+                sprites.addColumn(batch, sprites.spritesQuads[quad], u, 0,
+                    screenX + u, screenY - bandBottomOf(row, topU, rowsU), 1)
             end
-            local skipDest = bottom + rows * ts - topU
-            sprites.addColumn(batch, gradient, u, skipDest / rows, screenX + u, gradientY + skipDest, rows)
+            sprites.addColumn(batch, gradient, u, 0, screenX + u, screenY + ts - topU, rowsU)
         end
     end
 end

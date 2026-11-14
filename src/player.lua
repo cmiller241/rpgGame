@@ -42,14 +42,41 @@ end
 
 -- Initial properties
 player.x, player.y, player.z, player.shadowZ = 100, 250, 0, 0
-player.ax, player.ay, player.az = 0, 0, 0   -- acceleration this tick (from input)
-player.vx, player.vy, player.vz = 0, 0, 0   -- velocity (vz < 0 = rising)
-player.friction, player.speed, player.zSpeed, player.speedLimit = 0.99, 10, 0.5, 4
+player.ax, player.ay = 0, 0                 -- direction he's trying to walk (-1, 0, 1 each)
+player.vx, player.vy = 0, 0                 -- walking velocity, px per second
+player.vz = 0                               -- vertical velocity (vz < 0 = rising)
+player.subX, player.subY = 0, 0             -- fraction of a pixel carried to the next tick
+player.heldSince = {}                       -- arrow key -> tick it was pressed (for facing)
 player.jump = false
 player.jumpForce = -13
 player.gravity = 0.1
 player.gravityFactor = 250
-player.speedCharacter = 10
+
+-- WALKING
+-- He walks at WALK_SPEED, reaching it ACCEL_TIME after a key goes down and
+-- stopping STOP_TIME after it's let go. Each axis is steered on its own,
+-- toward the held direction (see player:update), so changing direction is
+-- immediate rather than sliding.
+local WALK_SPEED = 200     -- px per second (3.3 px a tick: 6.25 tiles a second)
+local ACCEL_TIME = 0.08    -- s from standing to full speed
+local STOP_TIME  = 0.05    -- s from full speed to standing
+
+local MOVE_KEYS = {
+    { "right", 1, 0, "Right" },
+    { "left", -1, 0, "Left" },
+    { "up", 0, -1, "Up" },
+    { "down", 0, 1, "Down" },
+}
+
+-- Moves velocity v (one axis, px/s) toward `target` for one tick of dt s:
+-- speeding up at WALK_SPEED / ACCEL_TIME, slowing down at WALK_SPEED /
+-- STOP_TIME, and dropping to 0 at once if the target is the other way.
+local function approach(v, target, dt)
+    if target ~= 0 and v * target < 0 then v = 0 end
+    local rate = (math.abs(target) > math.abs(v)) and (WALK_SPEED / ACCEL_TIME) or (WALK_SPEED / STOP_TIME)
+    if v < target then return math.min(target, v + rate * dt) end
+    return math.max(target, v - rate * dt)
+end
 player.isOnGround = true
 player.direction = "Down"
 player.state = "Standing"
@@ -168,6 +195,7 @@ function player:update(dt)
     end
 
     if isToolState then
+        self.vx, self.vy, self.subX, self.subY = 0, 0, 0, 0   -- he stands still to use a tool
         local anim = self.animations[self.state]
         if anim then
             -- Calculate total animation duration
@@ -183,25 +211,33 @@ function player:update(dt)
         return
     end
 
-    -- Movement input
+    -- Movement input: which way he's trying to go (ax, ay are -1, 0 or 1),
+    -- and which way he faces (the most recently pressed key still held).
+    self.tick = (self.tick or 0) + 1
     self.ax, self.ay = 0, 0
-    local moving = false
-    for _, info in ipairs({
-        { "right", 1, 0, "Right" },
-        { "left", -1, 0, "Left" },
-        { "up", 0, -1, "Up" },
-        { "down", 0, 1, "Down" }
-    }) do
-        if love.keyboard.isDown(info[1]) then
-            self.ax = info[2] * self.speed * dt
-            self.ay = info[3] * self.speed * dt
-            self.direction = info[4]
-            moving = true
+    local newest
+    for _, info in ipairs(MOVE_KEYS) do
+        local key, kx, ky, dir = info[1], info[2], info[3], info[4]
+        if love.keyboard.isDown(key) then
+            self.heldSince[key] = self.heldSince[key] or self.tick
+            self.ax, self.ay = self.ax + kx, self.ay + ky
+            if not newest or self.heldSince[key] > self.heldSince[newest[1]] then newest = info end
+        else
+            self.heldSince[key] = nil
         end
     end
-
+    local moving = self.ax ~= 0 or self.ay ~= 0
+    if newest then self.direction = newest[4] end
     self.state = moving and "Walking" or "Standing"
-    if not moving then self.vx, self.vy = 0, 0 end
+
+    -- Velocity (px/s) heads for WALK_SPEED in the held direction (diagonals
+    -- no faster than straight). Each axis on its own: it speeds up quickly
+    -- toward its target, brakes even more quickly to 0 when its keys are let
+    -- go, and drops straight to 0 if the target is the other way, so turning
+    -- and reversing are crisp instead of sliding.
+    local scale = (self.ax ~= 0 and self.ay ~= 0) and (1 / math.sqrt(2)) or 1
+    self.vx = approach(self.vx, self.ax * WALK_SPEED * scale, dt)
+    self.vy = approach(self.vy, self.ay * WALK_SPEED * scale, dt)
 
     -- Jumping
     if not self.isOnGround then
@@ -217,13 +253,18 @@ function player:update(dt)
     -- the tile under him is, including the floor of a pit.)
     self.vz = self.vz + self.gravity * self.gravityFactor * dt
 
-    self.vx = (self.vx + self.ax) * self.friction
-    self.vy = (self.vy + self.ay) * self.friction
-    self.vx = math.max(-self.speedLimit, math.min(self.vx, self.speedLimit))
-    self.vy = math.max(-self.speedLimit, math.min(self.vy, self.speedLimit))
+    -- Whole pixels to move this tick. He's always on a whole pixel (collision
+    -- works pixel by pixel), so the fraction left over is carried to the
+    -- next tick instead of being rounded away: speeds come out exact.
+    local stepX, stepY = self.vx * dt + self.subX, self.vy * dt + self.subY
+    local moveX = stepX >= 0 and math.floor(stepX) or math.ceil(stepX)
+    local moveY = stepY >= 0 and math.floor(stepY) or math.ceil(stepY)
+    self.subX, self.subY = stepX - moveX, stepY - moveY
 
     local beforeX, beforeY = self.x, self.y
-    self:moveCharacter(self.vx, self.vy, self.vz * 20 * dt)
+    self:moveCharacter(moveX, moveY, self.vz * 20 * dt)
+    if self.vx == 0 then self.subX = 0 end          -- stopped (or blocked by a wall)
+    if self.vy == 0 then self.subY = 0 end
 
     -- Pushing against a wall: stand still instead of walking on the spot
     -- (the walking stride would poke his foot into the wall). The 1 px
