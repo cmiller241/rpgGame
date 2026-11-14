@@ -255,7 +255,8 @@ vec4 waterReflection(vec3 p, vec2 screenPx) {
     float playerT = p.y - playerFeetY;            // where the ray passes him
     for (int i = 1; i <= REFLECT_STEPS; i++) {
         float t = float(i) * REFLECT_STEP;
-        if (playerT > 0.0 && t >= playerT && playerT > t - REFLECT_STEP) {
+        // (Not while he's standing in water himself: that looks odd.)
+        if (playerWaterDepth <= 0.0 && playerT > 0.0 && t >= playerT && playerT > t - REFLECT_STEP) {
             vec2 px = vec2(screenPx.x + ripple, screenPx.y - 2.0 * playerT);
             vec4 him = Texel(xrayCanvas, px / screenSize);
             if (him.a > 0.5) return vec4(him.rgb, REFLECT_AMOUNT);
