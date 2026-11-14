@@ -22,6 +22,7 @@ local spriteShadow = require("src.spriteShadow")
 local sprites = require("src.sprites")
 local terrain = require("src.terrain")
 local water = require("src.water")
+local tallGrass = require("src.tallgrass")
 local tiles = require("src.tiles")
 local toolbarMap = require("src.toolbarMap")
 local ui = require("src.ui")
@@ -105,7 +106,10 @@ function player:handleToolAnimation(state, frame, numFrames)
         if state ~= "PickUp" then
             local tx, ty = self:getTargetTile()
             if self[anim.canFunc](self, tx, ty) then
-                if state == "Watering" then
+                if state == "Plowing" and mapArray[ty][tx][1] == 10 then
+                    -- The hoe cuts tall grass back to plain grass; the next swing plows.
+                    tallGrass:cut(tx, ty)
+                elseif state == "Watering" then
                     -- Watering advances dry (even) tile to wet (odd)
                     mapArray[ty][tx][1] = mapArray[ty][tx][1] + 1
                 else
@@ -466,7 +470,7 @@ end
 function player:canPlow(tx, ty)
     if mapArray[ty] and mapArray[ty][tx] then
         local tile = mapArray[ty][tx]
-        return tile[1] == 1 and self:atLevelOf(tx, ty)
+        return (tile[1] == 1 or tile[1] == 10) and self:atLevelOf(tx, ty)   -- tall grass is cut first
     end
     return false
 end

@@ -51,6 +51,9 @@ local object       = require("src.objects")
 local ui           = require("src.ui")
 local message      = require("src.message")
 local devtools     = require("src.devtools")
+local tallGrass    = require("src.tallgrass")
+local pageSparkles = require("src.pagesparkles")
+local ambient      = require("src.ambient")   -- dust, ripples, fireflies
 
 local appWidth, appHeight
 local accumulator = 0 -- For fixed time-step
@@ -148,6 +151,8 @@ function love.update(dt)
         message:update(fixedDt) -- Update message typing
         growCrops()
         water:update(fixedDt)   -- water flows (sleeps once settled) and slowly evaporates
+        tallGrass:update(fixedDt)   -- grass parting around the player, cut-grass bits
+        ambient:update(fixedDt)     -- dust, ripples, fireflies
 
         -- Update object animations
         for _, obj in ipairs(object.objects) do
@@ -285,6 +290,7 @@ function love.draw()
             for _, obj in ipairs(pagesByRow[yC] or {}) do
                 object:addSprites(items, obj, cameraX, cameraY)
             end
+            ambient:addSprites(items, yC, cameraX, cameraY)
             if yC == playerRow then
                 player:addSprites(items, cameraX, cameraY)
             end
@@ -315,7 +321,8 @@ function love.draw()
         local function drawItems(last)
             for _, item in ipairs(row.items) do
                 if (item.drawLast or false) == last then
-                    local tint = lighting:objectTint(item.tintX, item.tintY, item.tintZ, item.caster)
+                    -- (Items can bring a precomputed tint, e.g. tall grass shares one per tile.)
+                    local tint = item.tint or lighting:objectTint(item.tintX, item.tintY, item.tintZ, item.caster)
                     item.owner:drawItem(item, tint)
                 end
             end
@@ -339,6 +346,9 @@ function love.draw()
         drawItems(true)
     end
 
+    -- Bits of cut grass fly over everything.
+    tallGrass:drawParticles(cameraX, cameraY)
+
     -- 5. Ground tiles (and the pit layer, if the player is in a pit).
     love.graphics.setCanvas(canvas.offscreen)
     love.graphics.draw(sprites.tileBatch)
@@ -352,6 +362,8 @@ function love.draw()
 
     -- 6. Lighting, shadows and colour grading.
     lighting:composite(cameraX, cameraY)
+    pageSparkles:draw(cameraX, cameraY)    -- motes of light around the pages (glow, so after lighting)
+    ambient:drawGlow(cameraX, cameraY)     -- fireflies
 
     -- Debug (C key): overlay the surface map.
     if canvas.showSurfaceMap then

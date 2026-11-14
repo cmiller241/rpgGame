@@ -8,7 +8,7 @@
 -- A map cell is {type, z, unused}. Types:
 --
 --     1        grass (with a random decorative flourish)
---     10       tall grass (drawing currently disabled)
+--     10       tall grass (clumps that sway and part around the player; tallgrass.lua)
 --     56       plowed dirt
 --     70       wet-soil overlay (only used as a crop layer, never in the map)
 --     72-87    crops on dirt: 72/73 seeds ... 86/87 fully grown
@@ -32,6 +32,7 @@ package.loaded[...] = tiles  -- register now, so modules that require each other
 local crop = require("src.crop")
 local mapArray = require("src.level").cells
 local sprites = require("src.sprites")
+local tallGrass = require("src.tallgrass")
 local tree = require("src.tree")
 
 -- Trees block only around the trunk, so you can walk behind the canopy.
@@ -40,7 +41,8 @@ local TRUNK = { x = 6, y = 18, w = 20, h = 12 }
 local types = {}
 
 types[1]   = { name = "grass", ground = "grass", flourish = true }
-types[10]  = { name = "tall grass", ground = "grass" }
+types[10]  = { name = "tall grass", ground = "grass",
+               addSprites = function(list, ...) tallGrass:addSprites(list, ...) end }
 types[56]  = { name = "plowed dirt", ground = "dirt" }
 types[512] = { name = "oak tree", ground = "grass", solid = TRUNK,
                addSprites = function(list, ...) tree:addSprites(list, "oak", ...) end }

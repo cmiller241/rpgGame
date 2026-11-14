@@ -72,6 +72,7 @@
     const IMAGE_FILES = {
         land: "sprites2.png", tree: "tree4.png", crop: "crop.png",
         block: "block.png", objects: "objects.png", player: "sprites-fixedgrid.png",
+        tallGrass: "grass3.png",
     };
     function loadImages() {
         return Promise.all(Object.entries(IMAGE_FILES).map(([key, file]) => new Promise((resolve, reject) => {

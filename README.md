@@ -25,12 +25,15 @@ Each frame is built in passes (see the top of `main.lua`):
 
 **Slopes** (`src/terrain.lua`, SLOPES): neighbouring tiles less than 32 px apart are joined by a slope instead of a little cliff. Each tile is drawn through five points (four shared corners and its own height in the middle), its art is warped onto that shape (cached once per tile in `src/sprites.lua`), and a corner-map texture gives the shaders the exact sloped height for shadows plus the slope for sunlight. The player walks up and down slopes. Maps whose heights are all multiples of 32 have no slopes and draw exactly as before.
 
+**Little touches of life** (`src/ambient.lua` ties them together): tall grass that sways, parts around the player and can be cut with the Hoe (`src/tallgrass.lua`); motes of light circling the Bible pages (`src/pagesparkles.lua`); dust from his footsteps (`src/dust.lua`); ripples and splashes in water (`src/splash.lua`); and fireflies at night (`src/fireflies.lua`). Glowing things (motes, fireflies) are drawn after lighting; the rest are sprites sorted with everything else.
+
 Time of day lives in `src/sun.lua` (`sun.angle`: 0 = sunrise, 90 = noon, 180 = sunset, 180-360 = night). Press **C** in game to view the surface map; **M**/**N** scrub the time of day.
 
 ## Project Layout & Tools
 - Every file in `src/` is a module: it returns a table, and other files `require` it. There are no shared globals.
 - Maps are made with the map editor: open `tools/mapeditor/index.html` in Chrome or Edge (see `tools/mapeditor/README.md`). `maps/map01.lua` holds tiles, heights, floating blocks, starting water and objects (the player's spawn, Bible pages), and `src/level.lua` loads it for the game.
 - `src/tiles.lua` defines every tile type: what is drawn on it, what sprite stands on it, and what part of it is solid. Add a tile type there.
+- Maps: `love .` plays `maps/map01.lua`; `love . --map NAME` plays `maps/NAME.lua`. `maps/test.lua` is a fixed copy the dev tools and tests are built around (`--shots` and `--bench` use it automatically, `--test-map` picks it otherwise), so map01 can be edited freely.
 - `love . --shots` renders a set of fixed scenes (sun angle, position, zoom) to PNGs plus a contact sheet. `love . --bench` prints the frame time for each scene. Both are defined in `src/devtools.lua` and write to the LÖVE save directory.
 - Keys: arrows move, Space jumps, F uses a tool or picks up a page, Q / Shift+Q raise / lower the outlined tile (Ctrl+Q / Ctrl+Shift+Q in 8 px steps, which make slopes), W pours water on it, E places / removes a floating block over it (Hoe selected), A/S choose a toolbar slot, Z/X zoom, M/N scrub the time of day, C shows the surface map.
 

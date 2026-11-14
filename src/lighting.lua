@@ -30,6 +30,11 @@ lighting.pageRadius    = 80        -- px
 lighting.pageHeight    = 20        -- px above the ground (the page hovers)
 lighting.pageGlowDay   = 0.25      -- glow strength in full daylight (night = 1)
 lighting.pageTint      = { 1.25, 1.1, 0.75 }   -- warm candle-like colour
+-- The light pulses with the page's hover (it bobs 4 px up and down once a
+-- second, objects.lua): at the top of the bob the pool is this much wider
+-- and brighter, at the bottom this much smaller and dimmer.
+lighting.pagePulseRadius = 0.08    -- +/- 8 % radius
+lighting.pagePulsePower  = 0.15    -- +/- 15 % brightness
 
 -- How visible the player's silhouette is through terrain that hides him
 -- (pit rims, cliffs in front of him). 0 turns the ghost off.
@@ -80,12 +85,17 @@ function lighting:begin()
     lamp.z = -player.drawZ + self.lampHeight
     lamp.radius = self.lampRadius
 
-    -- The pages nearest the player, as lights: {x, y, z, radius}.
+    -- The pages nearest the player, as lights: {x, y, z, radius}, plus
+    -- power (brightness). Each rises and falls with its page's hover.
     local pages = {}
     for _, obj in ipairs(object.objects) do
         local gx, gy = obj.x, obj.y - 4
         local dx, dy = gx - lamp.x, gy - lamp.y
-        pages[#pages + 1] = { gx, gy, terrain:heightAtWorld(gx, gy) + self.pageHeight, self.pageRadius,
+        local bob = math.sin(obj.animationTime * 2 * math.pi) * 4   -- as in objects.lua (+ = lower)
+        local rise = -bob / 4                                       -- -1 at the bottom, 1 at the top
+        pages[#pages + 1] = { gx, gy, terrain:heightAtWorld(gx, gy) + self.pageHeight - bob,
+                              self.pageRadius * (1 + self.pagePulseRadius * rise),
+                              power = 1 + self.pagePulsePower * rise,
                               dist = dx * dx + dy * dy }
     end
     table.sort(pages, function(a, b) return a.dist < b.dist end)
@@ -162,9 +172,14 @@ function lighting:composite(cameraX, cameraY)
     send(s, "pageLightCount", #pages)
     if #pages > 0 then
         local screen = {}
-        for i, pg in ipairs(pages) do screen[i] = { pg[1] - cameraX, pg[2] - pg[3] - cameraY } end
+        local power = {}
+        for i, pg in ipairs(pages) do
+            screen[i] = { pg[1] - cameraX, pg[2] - pg[3] - cameraY }
+            power[i] = pg.power
+        end
         send(s, "pageLights", unpack(pages))
         send(s, "pageLightScreen", unpack(screen))
+        send(s, "pageLightPower", unpack(power))
     end
     send(s, "pageGlow", self.pageGlow or 0)
     send(s, "pageTint", self.pageTint)

@@ -2,6 +2,9 @@
 --
 -- Developer tools, started from the command line:
 --
+-- Both run on maps/test.lua (src/level.lua), so the scene positions below
+-- stay valid however much maps/map01.lua is edited.
+--
 --   love . --shots   Renders each scene in SCENES (fixed sun angle, player
 --                    position and zoom), saves a PNG of each plus a contact
 --                    sheet of them all (shots_sheet.png), then quits. Handy

@@ -341,6 +341,12 @@
                 // Things standing on the tile sit at the ground height under their base.
                 if (opts.showWater && m.water[r][c] > 0) drawWaterTile(ctx, x, y, Math.max(...k), m.water[r][c]);
 
+                if (t === 10 && imgs.tallGrass) {
+                    for (const g of tallGrassClumps(c + 1, r + 1)) {
+                        const hg = surfaceAt(m, x + g.ox, y + g.oy);
+                        sprites.push({ sortY: y + g.oy, draw: () => drawGrassClump(ctx, imgs, x + g.ox, y + g.oy - hg, g.flip) });
+                    }
+                }
                 if (isCrop(t)) {
                     const hc = surfaceAt(m, x + 15, y + 27);
                     sprites.push({ sortY: y + 24, draw: () => drawCrop(ctx, imgs, t, x, y - Math.round(hc)) });
@@ -377,6 +383,31 @@
         ctx.fillRect(x, y - S, TS, TS);                       // surface
         ctx.fillStyle = "rgba(20, 70, 120, " + Math.min(0.9, a + 0.1) + ")";
         ctx.fillRect(x, y + TS - S, TS, depth);               // front face down to the floor
+    }
+
+    // Tall grass (tallgrass.lua): three clumps of grass3.png (32 x 27) per
+    // tile, bottom-centre on their base point, at the same spots as the game
+    // (back / middle / front, jittered; some mirrored). Drawn standing still.
+    function grassHash(a, b, c) {
+        const v = Math.sin(a * 12.9898 + b * 78.233 + c * 37.719) * 43758.5453;
+        return v - Math.floor(v);
+    }
+    function tallGrassClumps(c, r) {           // c, r 1-based like the game
+        const out = [];
+        const rowY = [11, 20, 29], colX = [9, 23, 15];
+        for (let i = 1; i <= 3; i++) {
+            out.push({ ox: colX[i - 1] + (grassHash(c, r, i) - 0.5) * 8,
+                       oy: rowY[i - 1] + (grassHash(r, c, i + 7) - 0.5) * 5,
+                       flip: grassHash(c + 3, r, i) < 0.5 ? -1 : 1 });
+        }
+        return out;
+    }
+    function drawGrassClump(ctx, imgs, x, y, flip) {
+        ctx.save();
+        ctx.translate(Math.round(x), Math.round(y));
+        ctx.scale(flip, 1);
+        ctx.drawImage(imgs.tallGrass, -16, -27);
+        ctx.restore();
     }
 
     function drawCrop(ctx, imgs, t, x, y) {

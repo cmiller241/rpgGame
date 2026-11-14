@@ -21,8 +21,23 @@
 local level = {}
 package.loaded[...] = level  -- register now, so modules that require each other share this table
 
--- Which map to load (a Lua module path, i.e. maps/map01.lua).
-level.file = "maps.map01"
+-- Which map to load (a Lua module path, i.e. maps/map01.lua):
+--   love .                  maps/map01.lua, the game
+--   love . --map NAME       maps/NAME.lua
+--   love . --test-map       maps/test.lua, the fixed map the dev tools and
+--   love . --shots/--bench  tests are built around (so editing map01 never
+--                           breaks them)
+local function chosenMap()
+    local args = arg or {}
+    for i, a in ipairs(args) do
+        if a == "--map" and args[i + 1] then return "maps." .. args[i + 1] end
+    end
+    for _, a in ipairs(args) do
+        if a == "--test-map" or a == "--shots" or a == "--bench" then return "maps.test" end
+    end
+    return "maps.map01"
+end
+level.file = chosenMap()
 
 local data = require(level.file)
 assert(type(data) == "table" and data.format == 2,

@@ -64,6 +64,7 @@ uniform float lampRadius;
 const int MAX_PAGE_LIGHTS = 6;   // must match lighting.PAGE_LIGHTS
 uniform vec4  pageLights[MAX_PAGE_LIGHTS];
 uniform vec2  pageLightScreen[MAX_PAGE_LIGHTS];
+uniform float pageLightPower[MAX_PAGE_LIGHTS];   // brightness, pulsing with the page's hover
 uniform int   pageLightCount;
 uniform float pageGlow;          // strength: faint by day, 1 at night
 uniform vec3  pageTint;          // warm colour multiplier
@@ -342,6 +343,7 @@ float pageLightAt(vec3 p) {
         if (d < L.w) {
             float w = 1.0 - d / L.w;
             w *= w;
+            w = min(1.0, w * pageLightPower[i]);
             if (w > best && lightVisible(p, L.xyz, 3.0)) best = w;
         }
     }
@@ -356,7 +358,7 @@ float pageLightOnScreen(vec2 screenPx) {
         if (i >= pageLightCount) break;
         float d = distance(screenPx, pageLightScreen[i]);
         float r = pageLights[i].w;
-        if (d < r) { float w = 1.0 - d / r; best = max(best, w * w); }
+        if (d < r) { float w = 1.0 - d / r; best = max(best, min(1.0, w * w * pageLightPower[i])); }
     }
     return best * pageGlow;
 }
@@ -419,6 +421,7 @@ vec4 effect(vec4 color, Image texture, vec2 uv, vec2 screenPx) {
     if (isTerrain) {
         // ---- Terrain (possibly under a semi-transparent sprite edge) ----
         vec4 pixel = mix(Texel(texture, uv), objectPixel, objectPixel.a);
+        pixel.a = 1.0;   // terrain is opaque (a blended alpha < 1 would darken the frame)
         vec4 spriteShadow = Texel(shadowCanvas, uv);
         pixel.rgb = lightTerrain(pixel.rgb, Texel(surfaceMap, uv), screenPx, spriteShadow.r, p);
         result = finishTerrain(pixel, p, spriteShadow.g > 0.0);
