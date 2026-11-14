@@ -155,6 +155,7 @@ function sun:getState()
         local tw = self.twilightLevel
         state.litLevel    = tw + (1 - tw) * day
         state.shadowLevel = tw + (self.ambientLevel - tw) * day
+        state.night = 1 - day      -- 0 in full day, 1 at the horizon
 
         -- dirY = sin(azimuth): 0 when the sun is due east/west, 1 when it's
         -- due south, i.e. how directly it faces a south-pointing wall.
@@ -168,6 +169,7 @@ function sun:getState()
         local level = self.twilightLevel + (1 - self.twilightLevel) * recovery
         state.shadowLevel, state.litLevel = level, level
         state.faceLight = self.faceLightNight
+        state.night = 1            -- (used for how strongly lights like pages glow)
     end
 
     state.lutRowA, state.lutRowB, state.lutMix = self:getLutBlend(a)

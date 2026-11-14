@@ -58,6 +58,33 @@ uniform vec3  lampPos;           // world x, y, height
 uniform vec2  lampScreen;        // lamp position on screen (for sprite pixels)
 uniform float lampRadius;
 
+// Bible pages give off a warm light (see lighting.lua). Each light is
+// (world x, y, height, radius); pageLightScreen is where it is on screen.
+// The web build doesn't send these yet, so the count stays 0 there.
+const int MAX_PAGE_LIGHTS = 6;   // must match lighting.PAGE_LIGHTS
+uniform vec4  pageLights[MAX_PAGE_LIGHTS];
+uniform vec2  pageLightScreen[MAX_PAGE_LIGHTS];
+uniform int   pageLightCount;
+uniform float pageGlow;          // strength: faint by day, 1 at night
+uniform vec3  pageTint;          // warm colour multiplier
+
+// Cloud shadows (see clouds.lua). cloudStrength 0 = no clouds (web build).
+uniform Image cloudMap;          // seamless noise, repeating
+uniform vec2  cloudOffset;       // how far the wind has moved the clouds (px)
+uniform float cloudTexelSize;    // world px per noise texel
+uniform float cloudSize;         // noise texture size (texels)
+uniform float cloudHeight;       // px above the ground
+uniform float cloudCoverage;
+uniform float cloudSoftness;
+uniform float cloudStrength;
+uniform float cloudMaxShift;
+
+// Water reflections: the ground tiles alone (no sprites), and the player's
+// feet (world y) so he can be reflected. Off unless waterReflections is sent.
+uniform Image groundCanvas;
+uniform float playerFeetY;
+uniform bool  waterReflections;
+
 // Colour grading LUT: 32 blue slices of 32x32 (red across, green up), and
 // several 32-row blocks stacked vertically for different times of day.
 uniform Image lutImage;
@@ -65,6 +92,10 @@ uniform vec2  lutSize;           // (1024, 128)
 uniform float lutRowA;           // first row of the "from" block
 uniform float lutRowB;           // first row of the "to" block
 uniform float lutMix;            // 0 = all A, 1 = all B
+
+// A slope facing the sun gets at most this many times the direct sunlight
+// of flat ground (a low sun on a steep slope would otherwise blow out).
+const float SLOPE_MAX_LIGHT = 1.8;
 
 const float LAMP_STEP  = 2.0;
 const int   LAMP_STEPS = 80;     // enough to cover lampRadius / LAMP_STEP
@@ -74,20 +105,66 @@ const int   LAMP_STEPS = 80;     // enough to cover lampRadius / LAMP_STEP
 const float ELEVATION_BRIGHTEN = 1.0 / 640.0;
 const float MIN_ELEVATION_LIGHT = 0.6;
 
-// Is there a clear line of sight from p to the lamp?
-bool lampVisible(vec3 p) {
-    vec3 toLamp = lampPos - p;
-    float dist = length(toLamp.xy);
+// Is there a clear line of sight from p to a light at `light`? Steps of
+// `step` px (the lamp uses LAMP_STEP; smaller lights can use bigger steps).
+bool lightVisible(vec3 p, vec3 light, float step) {
+    vec3 toLight = light - p;
+    float dist = length(toLight.xy);
     if (dist < 1.0) return true;
-    vec2 dir = toLamp.xy / dist;
-    float slope = toLamp.z / dist;
+    vec2 dir = toLight.xy / dist;
+    float slope = toLight.z / dist;
     for (int i = 1; i <= LAMP_STEPS; i++) {
-        float d = float(i) * LAMP_STEP;
+        float d = float(i) * step;
         if (d >= dist) break;
         // +0.5 so a ray grazing along a flat top doesn't hit its own tile
         if (solidAt(terrainAt(p.xy + dir * d), p.z + d * slope + 0.5)) return false;
     }
     return true;
+}
+
+bool lampVisible(vec3 p) {
+    return lightVisible(p, lampPos, LAMP_STEP);
+}
+
+// AMBIENT OCCLUSION
+// Ground hemmed in by higher terrain gets less light from the sky: the base
+// of a cliff, a pit floor, the bottom of a bowl, the ground under a
+// floating block. For each of 8 directions at two distances, how far the
+// terrain there rises above this point (as a slope, ignoring gentle rises
+// below AO_IGNORE so ordinary slopes stay clean) adds to the occlusion.
+const float AO_STRENGTH = 0.55;   // darkening of a fully enclosed point
+const float AO_IGNORE   = 0.25;   // rises shallower than this (per px) don't count
+const float AO_BLOCK_REACH = 56.0; // a block's underside closer than this shades the ground
+
+float ambientOcclusion(vec3 p, bool isFace) {
+    float occ = 0.0;
+    for (int i = 0; i < 8; i++) {
+        float a = float(i) * 0.785398;     // 45 degrees apart
+        vec2 dir = vec2(cos(a), sin(a));
+        for (int j = 0; j < 2; j++) {
+            float r = (j == 0) ? 8.0 : 20.0;
+            vec2 q = p.xy + dir * r;
+            if (isFace) q.y = max(q.y, p.y);   // a wall only sees what's in front of it
+            float h = terrainAt(q).x;
+            occ += clamp((h - p.z) / r - AO_IGNORE, 0.0, 1.0);
+        }
+    }
+    occ /= 16.0;
+    // A floating block overhead blocks part of the sky.
+    vec2 here = terrainAt(p.xy);
+    if (!isFace && here.y > p.z) occ = max(occ, 0.7 * clamp(1.0 - (here.y - p.z) / AO_BLOCK_REACH, 0.0, 1.0));
+    return occ;
+}
+
+// CLOUD SHADOWS
+// How much of the sun clouds block at world point p (0..cloudStrength): the
+// noise layer cloudHeight up, where the line from p toward the sun meets it.
+float cloudShadow(vec3 p) {
+    if (cloudStrength <= 0.0) return 0.0;
+    float dist = min((cloudHeight - p.z) / max(sunSlope, 1.0e-3), cloudMaxShift);
+    vec2 q = p.xy + sunDir * dist + cloudOffset;
+    float v = Texel(cloudMap, q / (cloudTexelSize * cloudSize)).r;
+    return cloudStrength * smoothstep(cloudCoverage - cloudSoftness, cloudCoverage + cloudSoftness, v);
 }
 
 // Looks a colour up in one LUT block.
@@ -157,6 +234,41 @@ bool insidePuddle(vec2 world) {
     return field >= PUDDLE_THRESHOLD;
 }
 
+// WATER REFLECTIONS
+// In this view a screen pixel shows everything along a line going north
+// and up at 45 degrees (moving 1 px north and 1 px up keeps the same screen
+// spot). Mirrored in a level water surface, the line from the eye bounces
+// off going north and UP: from water point p it passes (x, y - t, h + t),
+// which is on screen 2t px above the water pixel. So: walk t north until
+// the terrain there is at least as high as the ray, and show the ground
+// art 2t px up the screen (the terrain the reflected ray hit). The player
+// is reflected where the ray passes his feet's y. Nothing hit: sky.
+const float REFLECT_STEP   = 2.0;
+const int   REFLECT_STEPS  = 64;      // => up to 128 px of terrain reflected
+const float REFLECT_AMOUNT = 0.45;    // how strongly terrain shows in deep water
+const vec3  SKY_COLOUR     = vec3(0.62, 0.76, 0.88);
+
+// Returns the reflected colour (rgb) and how strongly to show it (a).
+vec4 waterReflection(vec3 p, vec2 screenPx) {
+    // Gentle ripples: shift the lookup sideways a pixel or so.
+    float ripple = floor(sin(p.y * 0.45 + time * 2.0) * 1.2 + 0.5);
+    float playerT = p.y - playerFeetY;            // where the ray passes him
+    for (int i = 1; i <= REFLECT_STEPS; i++) {
+        float t = float(i) * REFLECT_STEP;
+        if (playerT > 0.0 && t >= playerT && playerT > t - REFLECT_STEP) {
+            vec2 px = vec2(screenPx.x + ripple, screenPx.y - 2.0 * playerT);
+            vec4 him = Texel(xrayCanvas, px / screenSize);
+            if (him.a > 0.5) return vec4(him.rgb, REFLECT_AMOUNT);
+        }
+        if (terrainAt(vec2(p.x, p.y - t)).x >= p.z + t) {
+            vec2 px = vec2(screenPx.x + ripple, screenPx.y - 2.0 * t);
+            if (px.y < 0.0) break;
+            return vec4(Texel(groundCanvas, px / screenSize).rgb, REFLECT_AMOUNT);
+        }
+    }
+    return vec4(SKY_COLOUR, REFLECT_AMOUNT * 0.6);
+}
+
 vec3 waterColour(vec3 under, float depth, vec3 p) {
     vec3 c = waterTint(under, depth);
     // Sparkles: a pattern over whole world pixels so they stay crisp.
@@ -177,39 +289,102 @@ vec3 lightTerrain(vec3 rgb, vec4 surf, vec2 screenPx, float spriteSun, out vec3 
     float waterDepth = surf.g * heightRange;
     if (waterDepth > 0.01 && (waterDepth >= PUDDLE_MAX_DEPTH || insidePuddle(p.xy))) {
         rgb = waterColour(rgb, waterDepth, p);
+        if (waterReflections && !isFace) {
+            vec4 refl = waterReflection(p, screenPx);
+            // Thin films reflect less. (The reflection is then lit along
+            // with the water: sun, shadow, time-of-day grade.)
+            float k = refl.a * clamp(waterDepth / 6.0, 0.0, 1.0);
+            rgb = mix(rgb, refl.rgb, k);
+        }
     }
 
     rgb *= max(MIN_ELEVATION_LIGHT, 1.0 + p.z * ELEVATION_BRIGHTEN);
     if (isFace) rgb *= faceLight;
+    rgb *= 1.0 - AO_STRENGTH * ambientOcclusion(p, isFace);
 
     // How much direct sun is blocked here (0 = fully lit, 1 = fully shadowed).
     // Only worth computing while there is direct sun to block.
     float shade = 0.0;
+    float sunLit = litLevel;
     if (litLevel > shadowLevel) {
         shade = spriteSun;
         if (shade < 1.0) shade = max(shade, terrainShadow(p, sunDir, sunSlope, isFace));
+        if (shade < 1.0) shade = max(shade, cloudShadow(p));
+        // Slopes: direct sun scales with how squarely the ground faces it,
+        // relative to flat ground (1 = as bright as flat; 0 = facing away,
+        // only ambient). Flat ground and cliff faces are unchanged.
+        if (useCornerMap && !isFace) {
+            vec2 slope = cornerSample(p.xy).gb;
+            if (dot(slope, slope) > 1.0e-6) {
+                vec3 n = normalize(vec3(-slope, 1.0));
+                vec3 toSun = normalize(vec3(sunDir, sunSlope));
+                float rel = clamp(dot(n, toSun) / max(toSun.z, 0.05), 0.0, SLOPE_MAX_LIGHT);
+                sunLit = shadowLevel + (litLevel - shadowLevel) * rel;
+            }
+        }
     }
-    return rgb * mix(litLevel, shadowLevel, shade);
+    return rgb * mix(sunLit, shadowLevel, shade);
 }
 
 // Colour grade a lit terrain pixel, letting the lamp's glow through if the
 // lamp can reach world point p.
+// PAGE LIGHTS: each page lights a warm pool, brightest at the page and
+// fading out at its radius (smoothly, squared), blocked by terrain like the
+// lamp (with coarser steps; these are small lights). Returns how much page
+// light reaches world point p (0..1, the strongest page wins).
+float pageLightAt(vec3 p) {
+    float best = 0.0;
+    for (int i = 0; i < MAX_PAGE_LIGHTS; i++) {
+        if (i >= pageLightCount) break;
+        vec4 L = pageLights[i];
+        float d = length(vec3(p.xy - L.xy, (p.z - L.z) * 0.5));
+        if (d < L.w) {
+            float w = 1.0 - d / L.w;
+            w *= w;
+            if (w > best && lightVisible(p, L.xyz, 3.0)) best = w;
+        }
+    }
+    return best * pageGlow;
+}
+
+// The same for a sprite pixel, by distance on screen (sprites have no depth
+// here; their CPU shadow tint already handled the sun).
+float pageLightOnScreen(vec2 screenPx) {
+    float best = 0.0;
+    for (int i = 0; i < MAX_PAGE_LIGHTS; i++) {
+        if (i >= pageLightCount) break;
+        float d = distance(screenPx, pageLightScreen[i]);
+        float r = pageLights[i].w;
+        if (d < r) { float w = 1.0 - d / r; best = max(best, w * w); }
+    }
+    return best * pageGlow;
+}
+
+// Blends page light into a finished (graded) colour: the true colour warmed
+// by pageTint shows through, as the lamp's glow does.
+vec4 addPageLight(vec4 finished, vec4 pixel, float amount) {
+    if (amount <= 0.0) return finished;
+    return vec4(mix(finished.rgb, pixel.rgb * pageTint, amount), finished.a);
+}
+
 vec4 finishTerrain(vec4 pixel, vec3 p, bool lampBlockedBySprite) {
     vec4 graded = colourGrade(pixel);
+    vec4 result = graded;
     float lampDist = length(p.xy - lampPos.xy);
     // Only bother tracing toward the lamp inside its radius.
     if (lampDist < lampRadius && !lampBlockedBySprite && lampVisible(p)) {
         // Fade from the true colour at the lamp to the graded colour at its edge.
-        return mix(pixel, graded, clamp(lampDist / lampRadius, 0.0, 1.0));
+        result = mix(pixel, graded, clamp(lampDist / lampRadius, 0.0, 1.0));
     }
-    return graded;
+    return addPageLight(result, pixel, pageLightAt(p));
 }
 
 // Colour grade a sprite pixel (already shadow-tinted on the CPU). Sprites near
-// the player are always in his lamp's glow.
+// the player are always in his lamp's glow; sprites near a page in its light.
 vec4 finishSprite(vec4 pixel, vec2 screenPx) {
     float lampDist = distance(screenPx, lampScreen);
-    return mix(pixel, colourGrade(pixel), clamp(lampDist / lampRadius, 0.0, 1.0));
+    vec4 result = mix(pixel, colourGrade(pixel), clamp(lampDist / lampRadius, 0.0, 1.0));
+    return addPageLight(result, pixel, pageLightOnScreen(screenPx));
 }
 
 // The player's pixel `c` at screenPx: if it's below the waterline, tint it

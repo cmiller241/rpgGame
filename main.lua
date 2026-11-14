@@ -60,6 +60,7 @@ local debugFontSmall, debugFontLarge
 
 function love.load(args)
     love.window.setMode(1280, 800, {resizable=true, vsync=false})
+    sprites.restoreLand()   -- the mode change wiped the tile sheet's canvas
     love.window.setTitle("Scattered Verses")
 
     appWidth, appHeight = love.graphics.getDimensions()
@@ -262,7 +263,14 @@ function love.draw()
                         if def.ground == "dirt" then dirt:add(xC, yC, z, screenX, screenY, fb) end
                         if def.flourish then grass:addFlourish(xC, yC, z, screenX, screenY, fb) end
                     end
-                    if def.addSprites then def.addSprites(items, xC, yC, z, screenX, screenY, tile) end
+                    if def.addSprites then
+                        -- On a slope, trees and crops stand at the ground
+                        -- height under their base (near the tile's centre).
+                        local k = terrain:cornersOf(xC, yC)
+                        local spriteZ = k.flat and -k[1] or
+                            -math.floor(terrain:surfaceHeight((xC - 1) * ts + 16, (yC - 1) * ts + 24) + 0.5)
+                        def.addSprites(items, xC, yC, spriteZ, screenX, screenY, tile)
+                    end
 
                     -- Floating block: front face, then top, over this tile.
                     local bottom = terrain:blockAt(xC, yC)

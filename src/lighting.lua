@@ -8,6 +8,8 @@ local lighting = {}
 package.loaded[...] = lighting  -- register now, so modules that require each other share this table
 
 local canvas = require("src.canvas")
+local clouds = require("src.clouds")
+local object = require("src.objects")
 local player = require("src.player")
 local shader = require("src.shader")
 local spriteShadow = require("src.spriteShadow")
@@ -18,6 +20,16 @@ local water = require("src.water")
 
 lighting.lampRadius = 100     -- px, how far the player's lamp reaches
 lighting.lampHeight = 24      -- px above the player's feet (roughly hand height)
+
+-- BIBLE PAGES GIVE OFF LIGHT
+-- Up to PAGE_LIGHTS pages nearest the player each light a warm pool around
+-- them (blocked by terrain, like the lamp). Their glow is faint by day and
+-- full at night (pageGlowDay .. 1, by sun.night).
+lighting.PAGE_LIGHTS   = 6         -- must match MAX_PAGE_LIGHTS in ultimateShader.glsl
+lighting.pageRadius    = 80        -- px
+lighting.pageHeight    = 20        -- px above the ground (the page hovers)
+lighting.pageGlowDay   = 0.25      -- glow strength in full daylight (night = 1)
+lighting.pageTint      = { 1.25, 1.1, 0.75 }   -- warm candle-like colour
 
 -- How visible the player's silhouette is through terrain that hides him
 -- (pit rims, cliffs in front of him). 0 turns the ghost off.
@@ -67,6 +79,19 @@ function lighting:begin()
     lamp.y = player.drawY - 4
     lamp.z = -player.drawZ + self.lampHeight
     lamp.radius = self.lampRadius
+
+    -- The pages nearest the player, as lights: {x, y, z, radius}.
+    local pages = {}
+    for _, obj in ipairs(object.objects) do
+        local gx, gy = obj.x, obj.y - 4
+        local dx, dy = gx - lamp.x, gy - lamp.y
+        pages[#pages + 1] = { gx, gy, terrain:heightAtWorld(gx, gy) + self.pageHeight, self.pageRadius,
+                              dist = dx * dx + dy * dy }
+    end
+    table.sort(pages, function(a, b) return a.dist < b.dist end)
+    for i = #pages, self.PAGE_LIGHTS + 1, -1 do pages[i] = nil end
+    self.pageLights = pages
+    self.pageGlow = self.pageGlowDay + (1 - self.pageGlowDay) * (self.sun.night or 0)
 end
 
 -- Brightness multiplier for a sprite sampled at world (wx, wy), height h:
@@ -82,6 +107,9 @@ function lighting:objectTint(wx, wy, h, ownCaster)
     local shade = terrain:sunShadowAmount(wx, wy, h, sunState)
     if shade < 1 then
         shade = math.max(shade, spriteShadow:sunShadowAt(wx, wy, h, ownCaster, sunState))
+    end
+    if shade < 1 then
+        shade = math.max(shade, clouds:shadowAt(wx, wy, h, sunState))
     end
     return sunState.litLevel + (sunState.shadowLevel - sunState.litLevel) * shade
 end
@@ -127,6 +155,27 @@ function lighting:composite(cameraX, cameraY)
     s:send("lampPos", {lamp.x, lamp.y, lamp.z})
     s:send("lampScreen", {lamp.x - cameraX, lamp.y - lamp.z - cameraY})
     s:send("lampRadius", lamp.radius)
+
+    -- Pages as lights (world position + radius, and where they are on screen).
+    local send = shader.sendIfPresent
+    local pages = self.pageLights or {}
+    send(s, "pageLightCount", #pages)
+    if #pages > 0 then
+        local screen = {}
+        for i, pg in ipairs(pages) do screen[i] = { pg[1] - cameraX, pg[2] - pg[3] - cameraY } end
+        send(s, "pageLights", unpack(pages))
+        send(s, "pageLightScreen", unpack(screen))
+    end
+    send(s, "pageGlow", self.pageGlow or 0)
+    send(s, "pageTint", self.pageTint)
+
+    clouds:sendUniforms(s, send)
+
+    -- For water reflections: the ground tiles alone, and the player's feet
+    -- (world y) so he can be reflected.
+    send(s, "groundCanvas", canvas.offscreen)
+    send(s, "playerFeetY", player.drawY - 4)
+    send(s, "waterReflections", true)
 
     s:send("lutImage", sprites.lut)
     s:send("lutSize", {sprites.lut:getDimensions()})

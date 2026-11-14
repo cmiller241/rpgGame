@@ -19,7 +19,28 @@ Chrome or Edge. Nothing needs to be installed or built.
   trees, crops, blocks and objects. It has no lighting.
 
 The checkboxes in the toolbar show or hide the grid, height labels, water,
-blocks and objects.
+blocks and objects, and turn slopes on or off.
+
+## Slopes
+
+Neighbouring tiles whose heights differ by **less than 32 px** are joined by a
+slope instead of a small cliff: the ground slants from one to the other.
+Differences of 32 px or more stay cliffs with walls, so maps built from whole
+tiles look exactly as before.
+
+- Set the Height tool's step to 8 or 16 px and raise tiles a little at a time
+  to make hills, ramps and bowls. For example, 0, 8, 16, 24, 32 across five
+  tiles is a ramp up one tile.
+- Each corner of a tile is the average height of the joined tiles that share
+  it, so slopes have no seams, and the middle of the tile is at its own
+  height, so a single raised tile becomes a small peak. The tile's art is
+  warped to fit (one pixel column at a time, so it stays crisp), and slopes
+  get light from the upper left and shade on the far side.
+- A ramp next to lower, unjoined ground still shows a cliff on that side.
+  For example, a ramp up to a plateau has walls on both sides.
+- The game draws, lights and walks on slopes the same way (`src/terrain.lua`,
+  SLOPES). In the game, Ctrl+Q / Ctrl+Shift+Q raise and lower a tile by 8 px.
+  The browser build (`js/`) doesn't have slopes yet.
 
 ## Tools
 

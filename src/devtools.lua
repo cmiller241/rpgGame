@@ -37,6 +37,8 @@ devtools.hideOverlay = false   -- hides the debug text so screenshots are clean
 -- after that, without letting them flow: { {col, row, px}, ... }. Optional
 -- `blocks` places floating blocks: { {col, row, underside px}, ... }. Optional `dig` reshapes tiles for that scene
 -- only: { {col, row, height}, ... } with height in px (negative = pit).
+-- Optional `onGround` stands the player on the ground at (x, y) instead of
+-- at height `z`.
 
 -- Two pits in the open field east of the cliffs: one tile deep (cols 40-42)
 -- and two deep (cols 45-46), each two rows long.
@@ -60,6 +62,33 @@ puddle(57, 20); puddle(58, 21)                          -- touching only at a co
 
 -- Water in both pits, for wading.
 local WADE = { { 41, 12, 12 }, { 45, 12, 24 } }
+
+-- Slopes in the open field east of the trees (cols 58-74, rows 9-27):
+--   * a round hill, 8 px steps, up to 3 tiles high (around col 63, row 14)
+--   * a plateau 2 tiles high with a ramp down its south side (cols 69-73)
+--   * an east-west ramp rising to 56 px, ending above flat ground (row 21-22)
+--   * a sloped bowl 48 px deep (around col 63, row 25)
+local SLOPES = {}
+local function slope(c, r, h) if h ~= 0 then SLOPES[#SLOPES + 1] = { c, r, h } end end
+for r = 9, 19 do for c = 58, 68 do
+    local d = math.sqrt((c - 63) ^ 2 + (r - 14) ^ 2)
+    slope(c, r, math.max(0, math.floor((96 - d * 18) / 8 + 0.5) * 8))
+end end
+for r = 10, 13 do for c = 69, 73 do slope(c, r, 64) end end
+for r = 14, 20 do for c = 70, 72 do slope(c, r, 64 - (r - 13) * 8) end end
+for r = 21, 22 do for c = 58, 65 do slope(c, r, (c - 58) * 8) end end
+for r = 23, 27 do for c = 59, 67 do
+    local d = math.sqrt((c - 63) ^ 2 + (r - 25) ^ 2)
+    slope(c, r, math.min(0, math.floor((-48 + d * 16) / 8 + 0.5) * 8))
+end end
+
+-- A pond in the open field south-east of the trees (cols 60-65, rows
+-- 35-36, one tile deep), with a two-tile cliff behind its west half (cols
+-- 60-62, rows 33-34), for water reflections. Filled about two thirds.
+local POND = {}
+for c = 60, 65 do for r = 35, 36 do POND[#POND + 1] = { c, r, -32 } end end
+for c = 60, 62 do for r = 33, 34 do POND[#POND + 1] = { c, r, 64 } end end
+local POND_WATER = { { 62, 35, 30 } }
 
 -- Floating blocks in the open field: a row of three you can jump onto, a
 -- lone one, and one high enough (64 px up) to walk under.
@@ -104,6 +133,19 @@ local SCENES = {
     { name = "on_a_block",       angle = 110, x = 1284, y = 500, z = -56, zoom = 4, blocks = BLOCKS },
     { name = "under_a_block",    angle = 110, x = 1472, y = 540, zoom = 4, blocks = BLOCKS },
     { name = "wading_deep",      angle = 110, x = 1440, y = 408, z = 64, zoom = 4, dig = PITS, flood = WADE },
+    -- Lighting extras (lighting.lua, ultimateShader.glsl): a Bible page lighting
+    -- the night, water reflecting a cliff and the player, ambient occlusion.
+    { name = "page_light_night", angle = 250, x = 300, y = 520, zoom = 2 },
+    { name = "page_light_dusk",  angle = 176, x = 300, y = 520, zoom = 2 },
+    { name = "pond_reflection",  angle = 110, x = 2000, y = 1080, zoom = 3, dig = POND, flood = POND_WATER },
+    { name = "pond_morning",     angle = 35,  x = 2000, y = 1080, zoom = 3, dig = POND, flood = POND_WATER },
+    -- Slopes (terrain.lua SLOPES). The player stands partway up the hill.
+    { name = "slopes_morning",   angle = 40,  x = 2030, y = 560, zoom = 2, dig = SLOPES, onGround = true },
+    { name = "slopes_noon",      angle = 90,  x = 2030, y = 560, zoom = 2, dig = SLOPES, onGround = true },
+    { name = "slopes_afternoon", angle = 140, x = 2030, y = 560, zoom = 2, dig = SLOPES, onGround = true },
+    { name = "slopes_dusk",      angle = 170, x = 2030, y = 560, zoom = 2, dig = SLOPES, onGround = true },
+    { name = "slopes_surface_map", angle = 110, x = 2030, y = 560, zoom = 2, dig = SLOPES, surfaceMap = true, onGround = true },
+    { name = "slopes_closeup",   angle = 120, x = 2240, y = 520, zoom = 4, dig = SLOPES, onGround = true },
 }
 
 local BENCH_SECONDS = 3
@@ -114,10 +156,11 @@ local undoBlocks = {}
 
 -- Puts the game into a scene's state.
 local function applyScene(s)
-    for i = #undoDig, 1, -1 do
-        local u = undoDig[i]
-        terrain:setTileHeight(u[1], u[2], u[3])
-        undoDig[i] = nil
+    -- Height changes are applied in one batch (one terrain rebuild).
+    if #undoDig > 0 then
+        local undo = {}
+        for i = #undoDig, 1, -1 do undo[#undo + 1] = undoDig[i]; undoDig[i] = nil end
+        terrain:setTileHeights(undo)
     end
     water:clear()
     for i = #undoBlocks, 1, -1 do
@@ -131,8 +174,8 @@ local function applyScene(s)
     end
     for _, d in ipairs(s.dig or {}) do
         undoDig[#undoDig + 1] = { d[1], d[2], terrain:heightAtTile(d[1], d[2]) }
-        terrain:setTileHeight(d[1], d[2], d[3])
     end
+    if s.dig then terrain:setTileHeights(s.dig) end
 
     for _, f in ipairs(s.flood or {}) do
         for press = 1, f[3] do
@@ -144,7 +187,10 @@ local function applyScene(s)
     for _, p in ipairs(s.puddles or {}) do water:add(p[1], p[2], p[3]) end
 
     sun.angle = s.angle
-    player:teleport(s.x, s.y, s.z or 0)
+    -- `onGround`: put him on whatever ground is there (e.g. partway up a slope).
+    local z = s.z or 0
+    if s.onGround then z = -math.ceil(player:supportHeight(s.x, s.y, -100000) - 1e-6) end
+    player:teleport(s.x, s.y, z)
     view.zoom, view.displayZoom = s.zoom, s.zoom
     view:apply(love.graphics.getDimensions())
     camera:snap()

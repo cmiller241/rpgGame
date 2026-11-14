@@ -250,7 +250,7 @@ local function buildOverlay(level)
         local reach = math.ceil((terrain.maxHeight - col.lowest) / ts) + 1
         for r = col.first, math.min(terrain.rows, col.last + reach) do
             if included(c, r) then
-                terrain:emitTile(c, r, quad, true, false)   -- block (if any) goes after the water
+                terrain:emitTile(c, r, quad, true, false, verts)   -- block (if any) goes after the water
                 local d = water:depthAt(c, r)
                 if d > 0 then
                     local H = terrain:heightAtTile(c, r)

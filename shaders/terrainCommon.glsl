@@ -32,11 +32,37 @@ const int   SUN_STEPS = 160;     // => shadows up to 480 px long
 const float BLOCK_SIZE = 32.0;
 const float NO_BLOCK = -100000.0;
 
+// Sloped ground (see SLOPES in src/terrain.lua). cornerMap has 3x3 texels
+// per tile (corners, edge midpoints, centre), with linear filtering:
+//   R = ground height (px), G/B = slope (rise per px east / south),
+//   A = the tile's floating block underside (px), or below -20000 for none.
+// Sampling tile (c, r) at texel (3c + 0.5 + 2 fx, 3r + 0.5 + 2 fy) blends
+// only that tile's texels, i.e. exactly the sloped surface.
+// The web build doesn't send it yet (useCornerMap stays false there).
+uniform Image cornerMap;
+uniform bool  useCornerMap;
+
+// Corner-map sample at a world point. Off the map: flat ground, no block.
+vec4 cornerSample(vec2 world) {
+    vec2 t = world / tileSize;
+    vec2 tile = floor(t);
+    if (tile.x < 0.0 || tile.y < 0.0 || tile.x >= mapTiles.x || tile.y >= mapTiles.y) {
+        return vec4(0.0, 0.0, 0.0, -30000.0);
+    }
+    vec2 texel = tile * 3.0 + 0.5 + (t - tile) * 2.0;
+    return Texel(cornerMap, texel / (mapTiles * 3.0));
+}
+
 // What's on the tile under a world-space point:
-//   x = ground height in px (negative in a pit)
+//   x = ground height in px (negative in a pit), following slopes
 //   y = underside of its floating block in px, or NO_BLOCK
-// Off-map = flat ground, no block. (Encoding: terrain:writeHeightTexel.)
+// Off-map = flat ground, no block. (Encoding: terrain:writeHeightTexel and
+// terrain:writeCornerTexels.)
 vec2 terrainAt(vec2 world) {
+    if (useCornerMap) {
+        vec4 c = cornerSample(world);
+        return vec2(c.r, c.a < -20000.0 ? NO_BLOCK : c.a);
+    }
     vec2 tile = floor(world / tileSize);
     if (tile.x < 0.0 || tile.y < 0.0 || tile.x >= mapTiles.x || tile.y >= mapTiles.y) {
         return vec2(0.0, NO_BLOCK);

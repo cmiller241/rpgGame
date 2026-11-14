@@ -7,6 +7,7 @@ package.loaded[...] = dirt  -- register now, so modules that require each other 
 
 local mapArray = require("src.level").cells
 local sprites = require("src.sprites")
+local terrain = require("src.terrain")
 local tiles = require("src.tiles")
 
 -- Adds a dirt tile to the tile batch. The sprite (quads 56-71) is picked by
@@ -26,7 +27,7 @@ function dirt:add(xC, yC, z, screenX, screenY, batch)
     if isDirt(xC + 1, yC) then tile = tile + 4 end
     if isDirt(xC, yC + 1) then tile = tile + 8 end
 
-    batch:add(sprites.spritesQuads[tile], screenX, screenY + z)
+    sprites.addOnTop(batch, sprites.spritesQuads[tile], screenX, screenY, terrain:cornersOf(xC, yC))
 end
 
 return dirt

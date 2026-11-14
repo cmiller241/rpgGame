@@ -17,7 +17,13 @@ Each frame is built in passes (see the top of `main.lua`):
 1. **Surface map** (`src/terrain.lua`): one mesh draw records, for every screen pixel, whether it is a cliff face or a flat top and how high it is. From that, any pixel can be turned back into a 3D world point.
 2. **Scene**: tiles go into one sprite batch. Sprites (player, trees, crops) go to the object canvas, and each queues its shadow.
 3. **Sprite shadows** (`src/spriteShadow.lua`, `shaders/spriteShadowShader.glsl`): each sprite is treated as an upright cut-out facing the light, and the shadow is an exact ray/billboard intersection with no per-pixel loops. Shadows climb cliff faces.
-4. **Lighting** (`src/lighting.lua`, `shaders/ultimateShader.glsl`): terrain shadows are ray-marched through a one-texel-per-tile heightmap, so their length depends on cliff height and sun altitude. Cliff faces are lit by sun direction, the lamp is occluded by terrain, and a time-of-day LUT is applied.
+4. **Lighting** (`src/lighting.lua`, `shaders/ultimateShader.glsl`): terrain shadows are ray-marched through a one-texel-per-tile heightmap, so their length depends on cliff height and sun altitude. Cliff faces are lit by sun direction, the lamp is occluded by terrain, and a time-of-day LUT is applied. On top of that:
+   - **Ambient occlusion**: ground hemmed in by higher terrain (cliff bases, pit floors, bowls, under floating blocks) gets less sky light.
+   - **Cloud shadows** (`src/clouds.lua`): a seamless noise layer drifts with the wind high above the ground; it shades terrain and sprites along the sun's direction, so the shadows shift with the time of day.
+   - **Water reflections**: a reflected view ray is marched north from each water pixel; it shows the terrain it hits (and the player), or the sky.
+   - **Page lights**: the Bible pages nearest the player light warm pools (blocked by terrain like the lamp), faint by day and full at night (`lighting.lua`).
+
+**Slopes** (`src/terrain.lua`, SLOPES): neighbouring tiles less than 32 px apart are joined by a slope instead of a little cliff. Each tile is drawn through five points (four shared corners and its own height in the middle), its art is warped onto that shape (cached once per tile in `src/sprites.lua`), and a corner-map texture gives the shaders the exact sloped height for shadows plus the slope for sunlight. The player walks up and down slopes. Maps whose heights are all multiples of 32 have no slopes and draw exactly as before.
 
 Time of day lives in `src/sun.lua` (`sun.angle`: 0 = sunrise, 90 = noon, 180 = sunset, 180-360 = night). Press **C** in game to view the surface map; **M**/**N** scrub the time of day.
 
@@ -26,7 +32,7 @@ Time of day lives in `src/sun.lua` (`sun.angle`: 0 = sunrise, 90 = noon, 180 = s
 - Maps are made with the map editor: open `tools/mapeditor/index.html` in Chrome or Edge (see `tools/mapeditor/README.md`). `maps/map01.lua` holds tiles, heights, floating blocks, starting water and objects (the player's spawn, Bible pages), and `src/level.lua` loads it for the game.
 - `src/tiles.lua` defines every tile type: what is drawn on it, what sprite stands on it, and what part of it is solid. Add a tile type there.
 - `love . --shots` renders a set of fixed scenes (sun angle, position, zoom) to PNGs plus a contact sheet. `love . --bench` prints the frame time for each scene. Both are defined in `src/devtools.lua` and write to the LÖVE save directory.
-- Keys: arrows move, Space jumps, F uses a tool or picks up a page, Q / Shift+Q raise / lower the outlined tile, W pours water on it, E places / removes a floating block over it (Hoe selected), A/S choose a toolbar slot, Z/X zoom, M/N scrub the time of day, C shows the surface map.
+- Keys: arrows move, Space jumps, F uses a tool or picks up a page, Q / Shift+Q raise / lower the outlined tile (Ctrl+Q / Ctrl+Shift+Q in 8 px steps, which make slopes), W pours water on it, E places / removes a floating block over it (Hoe selected), A/S choose a toolbar slot, Z/X zoom, M/N scrub the time of day, C shows the surface map.
 
 ## Browser Version
 The game also runs in a browser: `js/` is a JavaScript port of the Lua code, running on a small re-implementation of the LÖVE API (`js/love/`, from Asteroid Bob's web port) drawn with WebGL2.
@@ -50,3 +56,5 @@ Then open http://localhost:8080/index.html. `npm run watch` rebuilds on every sa
 - The old canvas JavaScript version is kept in `archive/js-canvas-old/`.
 
 Changes made in the Lua code don't carry over to `js/` on their own; each one has to be made in both places.
+
+Not ported yet: slopes, cloud shadows, water reflections and page lights. The shared shaders only use them when the Lua game sends their uniforms (`useCornerMap`, `cloudStrength`, `waterReflections`, `pageLightCount`), so the browser version still draws small height differences as steps and has none of those effects. Ambient occlusion works in both.

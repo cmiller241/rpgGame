@@ -292,9 +292,11 @@ function player:keypressed(key)
         -- Place / remove a floating block over the outlined tile (Hoe selected).
         if self:selectedTool() == "Hoe" then self:toggleBlock() end
     elseif key == "q" then
-        -- Shape the land with the Hoe: Q raises, Shift+Q lowers.
+        -- Shape the land with the Hoe: Q raises, Shift+Q lowers. With Ctrl,
+        -- in small steps that make slopes instead of cliffs.
         local lower = love.keyboard.isDown("lshift", "rshift")
-        self:shapeTerrain(lower and -1 or 1)
+        local fine = love.keyboard.isDown("lctrl", "rctrl")
+        self:shapeTerrain(lower and -1 or 1, fine)
     end
 end
 
@@ -339,7 +341,8 @@ function player:supportHeight(x, y, z)
     local best = -math.huge
     for row = math.floor((y + BOX_TOP) / ts) + 1, math.floor((y + BOX_BOTTOM) / ts) + 1 do
         for col = math.floor((x + BOX_LEFT) / ts) + 1, math.floor((x + BOX_RIGHT) / ts) + 1 do
-            best = math.max(best, terrain:supportAt(col, row, feet))
+            best = math.max(best, terrain:supportAt(col, row, feet,
+                x + BOX_LEFT, y + BOX_TOP, x + BOX_RIGHT + 1, y + BOX_BOTTOM + 1))
         end
     end
     return best
@@ -352,8 +355,18 @@ end
 -- Steps self[axis] toward `target` one pixel at a time until it arrives or
 -- the next pixel would collide. Returns true if it was blocked. Moves are at
 -- most a few pixels per tick, so this is only a handful of checks.
+--
+-- SLOPES (terrain.lua): walking (x / y) while on the ground follows the
+-- ground up and down a slope. A slope rises less than 1 px per px walked, so
+-- if the next pixel is blocked only by ground at most SLOPE_STEP px higher,
+-- he steps up onto it; and if the ground under him has dropped by at most
+-- SLOPE_STEP, he steps down with it instead of falling. Cliffs are at least
+-- 32 px, so they still block (or let him fall) as before.
+local SLOPE_STEP = 2
+
 function player:moveAxis(axis, target)
     local step = (target > self[axis]) and 1 or -1
+    local walking = axis ~= "z" and self.isOnGround
     while self[axis] ~= target do
         local x, y, z = self.x, self.y, self.z
         if axis == "x" then x = x + step
@@ -361,9 +374,29 @@ function player:moveAxis(axis, target)
         else z = z + step end
 
         if not self:canMoveTo(x, y, z) then
-            return true
+            -- Up a slope?
+            local climbed = false
+            if walking then
+                local ground = self:supportHeight(x, y, -100000)   -- highest ground under him there
+                local rise = ground - (-z)
+                local newZ = -math.ceil(ground - 1e-6)
+                if rise > 0 and rise <= SLOPE_STEP and self:canMoveTo(x, y, newZ) then
+                    self.z = newZ
+                    climbed = true
+                end
+            end
+            if not climbed then return true end
         end
         self[axis] = self[axis] + step
+
+        -- Down a slope?
+        if walking then
+            local ground = self:supportHeight(self.x, self.y, self.z)
+            local drop = -self.z - ground
+            if drop > 1e-6 and drop <= SLOPE_STEP then
+                self.z = -math.ceil(ground - 1e-6)
+            end
+        end
     end
     return false
 end
@@ -387,7 +420,10 @@ function player:canMoveTo(newX, newY, newZ)
         for col = math.floor(left / ts) + 1, math.floor(right / ts) + 1 do
             local cell = mapArray[row] and mapArray[row][col]
             if not cell then return false end                       -- off the map
-            if cell[2] < newZ then return false end                 -- taller than us
+            -- Ground (following slopes) higher than his feet anywhere under him.
+            if terrain:groundMaxIn(col, row, left, top, right + 1, bottom + 1) > feet + 1e-6 then
+                return false
+            end
             if tiles.blocks(col, row, left, top, right, bottom) then return false end
             -- Floating block: solid from its underside b to its top; his body
             -- runs from his feet to feet + PLAYER_HEIGHT.
@@ -413,12 +449,24 @@ function player:getTile(x, y)
     return { v = cell[1], z = cell[2] }
 end
 
+-- Is tile (tx, ty) at the player's own height? On a flat tile his feet must
+-- be exactly at its height; on a slope, anywhere within the tile's range of
+-- heights (he stands at the whole pixel just above the ground).
+function player:atLevelOf(tx, ty)
+    local k = terrain:cornersOf(tx, ty)
+    local feet = -self.z
+    if k.flat then return feet == k[1] end
+    local lo = math.min(k[1], k[2], k[3], k[4], k[5])
+    local hi = math.max(k[1], k[2], k[3], k[4], k[5])
+    return feet >= lo - 0.5 and feet < hi + 1
+end
+
 -- Tool checks: each tool only works on the right tile type at the player's
 -- own height.
 function player:canPlow(tx, ty)
     if mapArray[ty] and mapArray[ty][tx] then
         local tile = mapArray[ty][tx]
-        return tile[1] == 1 and tile[2] == self.z
+        return tile[1] == 1 and self:atLevelOf(tx, ty)
     end
     return false
 end
@@ -426,14 +474,14 @@ end
 function player:canSow(tx, ty)
     if mapArray[ty] and mapArray[ty][tx] then
         local tile = mapArray[ty][tx]
-        return tile[1] == 56 and tile[2] == self.z
+        return tile[1] == 56 and self:atLevelOf(tx, ty)
     end
     return false
 end
 
 function player:canWater(tx, ty)
     if mapArray[ty] and mapArray[ty][tx] then
-        return tiles.isDryCrop(mapArray[ty][tx][1]) and mapArray[ty][tx][2] == self.z
+        return tiles.isDryCrop(mapArray[ty][tx][1]) and self:atLevelOf(tx, ty)
     end
     return false
 end
@@ -630,17 +678,19 @@ end
 -- Refused if the new height would put the player inside the tile (his
 -- collision box can overlap the target tile when he faces sideways).
 local RAISE_STEP = 32                 -- one tile
+local FINE_STEP  = 8                  -- Ctrl+Q: small enough to make a slope
 local MAX_RAISE  = 10 * RAISE_STEP    -- tallest a player-made mountain can get
 local MAX_DEPTH  = 5 * RAISE_STEP     -- deepest a pit can get (deeper only shows more back wall)
 
-function player:shapeTerrain(direction)
+function player:shapeTerrain(direction, fine)
     if self:selectedTool() ~= "Hoe" then return end
     local tx, ty = self:getTargetTile()
     local cell = mapArray[ty] and mapArray[ty][tx]
     if not cell then return end
 
     local oldHeight = -cell[2]
-    local newHeight = math.max(-MAX_DEPTH, math.min(MAX_RAISE, oldHeight + direction * RAISE_STEP))
+    local step = fine and FINE_STEP or RAISE_STEP
+    local newHeight = math.max(-MAX_DEPTH, math.min(MAX_RAISE, oldHeight + direction * step))
     if newHeight == oldHeight then return end
     -- Ground can't rise into a floating block above it.
     local block = terrain:blockAt(tx, ty)
@@ -648,8 +698,18 @@ function player:shapeTerrain(direction)
 
     terrain:setTileHeight(tx, ty, newHeight)
     if not self:canMoveTo(self.x, self.y, self.z) then
-        terrain:setTileHeight(tx, ty, oldHeight)   -- would trap him: undo
-        return
+        -- A small raise can join the tile to the one he's on, tilting the
+        -- ground under his feet up a little (a slope): lift him onto it.
+        -- Anything more would trap him: undo.
+        local ground = self:supportHeight(self.x, self.y, -100000)
+        local liftedZ = -math.ceil(ground - 1e-6)
+        if ground - (-self.z) <= FINE_STEP and self:canMoveTo(self.x, self.y, liftedZ) then
+            self.z = liftedZ
+            self:updateGround()
+        else
+            terrain:setTileHeight(tx, ty, oldHeight)
+            return
+        end
     end
     sounds.play("shovel")
 end
@@ -682,9 +742,16 @@ function player:drawOutline(cameraX, cameraY, mapArray)
     end
 
     love.graphics.setCanvas(canvas.offscreen)
-    local x = (tx - 1) * sprites.size - cameraX
-    local y = (ty - 1) * sprites.size - cameraY
-    love.graphics.rectangle("line", x, y + cell[2], sprites.size, sprites.size)
+    local ts = sprites.size
+    local x = (tx - 1) * ts - cameraX
+    local y = (ty - 1) * ts - cameraY
+    local k = terrain:cornersOf(tx, ty)
+    if k.flat then
+        love.graphics.rectangle("line", x, y - k[1], ts, ts)
+    else
+        -- On a slope the outline follows the tile's corners.
+        love.graphics.polygon("line", x, y - k[1], x + ts, y - k[2], x + ts, y + ts - k[4], x, y + ts - k[3])
+    end
     love.graphics.setColor(1, 1, 1, 1)
 end
 

@@ -41,7 +41,7 @@
         waterAmount: 8,
         newObjectType: "page",
         brush: 1,
-        show: { grid: true, heights: true, water: true, blocks: true, objects: true },
+        show: { grid: true, heights: true, water: true, blocks: true, objects: true, slopes: true },
         hover: null,             // { c, r, wx, wy }
         selected: null,          // selected object
         fileHandle: null,        // File System Access handle, when available
@@ -326,6 +326,7 @@
             range: { c0, c1, r0, r1 }, zoom: z, maxHeight: ext.maxH, minHeight: ext.minH,
             showHeights: state.show.heights, showWater: state.show.water,
             showBlocks: state.show.blocks, showObjects: state.show.objects,
+            slopes: state.show.slopes,
             selected: state.selected,
         };
 

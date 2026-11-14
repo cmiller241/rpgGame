@@ -35,10 +35,17 @@ local terrain = require("src.terrain")
 local FACE_SINGLE, FACE_BOTTOM, FACE_MIDDLE, FACE_TOP = 23, 27, 31, 35
 local FACE_GRADIENT = 45
 
+-- Height (px) of the top of tile (col, row)'s south wall: the highest point
+-- of its top's south edge (flat tiles: just their height).
+local function wallTop(col, row)
+    local k = terrain:cornersOf(col, row)
+    return math.max(k[3], k[4])
+end
+
 -- Does tile (col, row) have a wall covering the 32 px band starting at
 -- height `bandBottom`?
 local function wallCovers(col, row, bandBottom)
-    local top = terrain:heightAtTile(col, row)
+    local top = wallTop(col, row)
     local bottom = math.min(top, terrain:faceBottom(col, row))
     return top > bandBottom and bottom <= bandBottom
 end
@@ -47,17 +54,27 @@ end
 -- z                  tile's z from mapArray (negative = raised, positive = pit)
 -- screenX, screenY   where the tile would be drawn at ground level
 -- batch              (optional) sprite batch to add to; default sprites.tileBatch
+--
+-- SLOPES (terrain.lua): no wall if the tile in front is joined to this one
+-- (the ground slants down into it instead). If the top's south edge slants
+-- (e.g. the high end of an east-west ramp above lower ground), the wall is
+-- drawn one pixel column at a time, each cut off at the edge's height there.
 function mountain:add(xC, yC, z, screenX, screenY, batch)
     batch = batch or sprites.tileBatch
+    if terrain:joinedSouth(xC, yC) then return end
     local ts = sprites.size
-    local top = -z
+    local k = terrain:cornersOf(xC, yC)
+    local top = math.max(k[3], k[4])
     local bottom = terrain:faceBottom(xC, yC)
     if bottom >= top then return end              -- nothing lower in front: no wall
 
-    local rows = (top - bottom) / ts              -- wall height in tiles
+    -- Wall height in whole tiles (rounded up; a partial top row is covered
+    -- by the tile's own top, which is drawn after it).
+    local rows = math.ceil((top - bottom) / ts - 1e-6)
 
-    -- row 0 is the bottom of the wall, row rows-1 the top (just under the
-    -- tile's own surface).
+    -- Which face sprite each row uses. Row 0 is the bottom of the wall,
+    -- row rows-1 the top (just under the tile's own surface).
+    local quads = {}
     for row = 0, rows - 1 do
         local quad
         if rows == 1 then
@@ -73,13 +90,37 @@ function mountain:add(xC, yC, z, screenX, screenY, batch)
         local bandBottom = bottom + row * ts      -- height of this row's lower edge
         if wallCovers(xC + 1, yC, bandBottom) then quad = quad + 1 end
         if wallCovers(xC - 1, yC, bandBottom) then quad = quad + 2 end
+        quads[row] = quad
+    end
+    local gradient = sprites.spritesQuads[FACE_GRADIENT]
+    local gradientY = screenY - bottom - (rows - 1) * ts
 
-        batch:add(sprites.spritesQuads[quad], screenX, screenY - bandBottom)
+    if k[3] == k[4] then
+        for row = 0, rows - 1 do
+            batch:add(sprites.spritesQuads[quads[row]], screenX, screenY - (bottom + row * ts))
+        end
+        -- Shading gradient over the full wall, stretched to its height.
+        batch:add(gradient, screenX, gradientY, 0, 1, rows)
+        return
     end
 
-    -- Shading gradient over the full wall, stretched to its height.
-    batch:add(sprites.spritesQuads[FACE_GRADIENT],
-        screenX, screenY - bottom - (rows - 1) * ts, 0, 1, rows)
+    -- Slanted top edge: column by column, cut at the edge's height.
+    for u = 0, ts - 1 do
+        local f = (u + 0.5) / ts
+        local topU = math.floor(k[3] + (k[4] - k[3]) * f + 0.5)
+        if topU > bottom then
+            for row = 0, rows - 1 do
+                local bandBottom = bottom + row * ts
+                if topU > bandBottom then
+                    local skip = math.max(0, bandBottom + ts - topU)   -- source rows above the edge
+                    sprites.addColumn(batch, sprites.spritesQuads[quads[row]], u, skip,
+                        screenX + u, screenY - bandBottom + skip, 1)
+                end
+            end
+            local skipDest = bottom + rows * ts - topU
+            sprites.addColumn(batch, gradient, u, skipDest / rows, screenX + u, gradientY + skipDest, rows)
+        end
+    end
 end
 
 -- Screen rectangle a tile covers: its top plus any wall below it. Anything
@@ -87,8 +128,10 @@ end
 -- hidden behind it. Returns x, y, w, h.
 function mountain:footprint(xC, yC, z, screenX, screenY)
     local ts = sprites.size
-    local top = -z
-    local lowest = math.min(top, terrain:faceBottom(xC, yC))
+    local k = terrain:cornersOf(xC, yC)
+    local top = math.max(k[1], k[2], k[3], k[4], k[5])
+    local lowest = math.min(k[3], k[4])
+    if not terrain:joinedSouth(xC, yC) then lowest = math.min(lowest, terrain:faceBottom(xC, yC)) end
     return screenX, screenY - top, ts, ts + top - lowest
 end
 

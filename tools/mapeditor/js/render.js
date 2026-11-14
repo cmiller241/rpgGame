@@ -52,11 +52,82 @@
 
     function inMap(m, c, r) { return r >= 0 && r < m.height && c >= 0 && c < m.width; }
     function heightAt(m, c, r) { return inMap(m, c, r) ? m.heights[r][c] : 0; }
-    function zAt(m, c, r) { return -heightAt(m, c, r); }   // the game's z (negative = up)
 
     // Bottom of tile (c, r)'s south wall: the lower of ground level and the
     // tile in front of it (terrain:faceBottom).
     function faceBottom(m, c, r) { return Math.min(0, heightAt(m, c, r + 1)); }
+
+    // ------------------------------------------------------------------
+    // Slopes (the same model as the game's terrain.lua, SLOPES)
+    //
+    // Neighbouring tiles whose heights differ by less than SLOPE_LIMIT are
+    // "joined": instead of a little cliff between them, the ground slants
+    // smoothly from one to the other. Bigger differences stay cliffs.
+    //
+    // Each tile still has one height in the map. What gets drawn is a top
+    // surface through five points, k = [nw, ne, sw, se, centre]:
+    //   * corners: a corner is shared by up to four tiles; they're grouped
+    //     by joined edges (N-S and E-W neighbours, not diagonals), and every
+    //     tile in a group uses the group's average height there, so joined
+    //     tiles meet without seams
+    //   * centre: the tile's own height, so a lone raised tile still peaks
+    //     at the height it was given
+    // Inside a tile the surface is four bilinear quarters through the
+    // corners, the edge midpoints and the centre (edgeHeights).
+    // ------------------------------------------------------------------
+
+    const SLOPE_LIMIT = 32;
+    let slopesOn = true;     // set from opts.slopes on each height-view draw
+
+    function joined(a, b) { return slopesOn && Math.abs(a - b) < SLOPE_LIMIT; }
+
+    // Height of grid point (gx, gy) (the corner between tiles gx-1..gx and
+    // gy-1..gy) as seen from tile (c, r), one of those four tiles: the
+    // average height of the tiles in its group there.
+    function cornerFor(m, c, r, gx, gy) {
+        if (!slopesOn) return heightAt(m, c, r);
+        // 0 = NW tile, 1 = NE, 2 = SW, 3 = SE of the grid point
+        const cs = [gx - 1, gx, gx - 1, gx], rs = [gy - 1, gy - 1, gy, gy];
+        const hs = [], parent = [0, 1, 2, 3];
+        for (let i = 0; i < 4; i++) hs.push(inMap(m, cs[i], rs[i]) ? m.heights[rs[i]][cs[i]] : null);
+        const find = i => (parent[i] === i ? i : (parent[i] = find(parent[i])));
+        for (const [a, b] of [[0, 1], [2, 3], [0, 2], [1, 3]]) {
+            if (hs[a] !== null && hs[b] !== null && joined(hs[a], hs[b])) parent[find(a)] = find(b);
+        }
+        const self = (c === gx - 1 ? 0 : 1) + (r === gy - 1 ? 0 : 2);
+        let sum = 0, n = 0;
+        for (let i = 0; i < 4; i++) if (hs[i] !== null && find(i) === find(self)) { sum += hs[i]; n++; }
+        return sum / n;
+    }
+
+    // Surface points of tile (c, r): [nw, ne, sw, se, centre].
+    function corners(m, c, r) {
+        return [cornerFor(m, c, r, c, r), cornerFor(m, c, r, c + 1, r),
+                cornerFor(m, c, r, c, r + 1), cornerFor(m, c, r, c + 1, r + 1), heightAt(m, c, r)];
+    }
+    const isFlat = k => k[0] === k[4] && k[1] === k[4] && k[2] === k[4] && k[3] === k[4];
+
+    // Heights along the north edge, middle line and south edge at fx (0..1).
+    function edgeHeights(k, fx) {
+        const n = k[0] + (k[1] - k[0]) * fx, s = k[2] + (k[3] - k[2]) * fx;
+        const w = (k[0] + k[2]) / 2, e = (k[1] + k[3]) / 2;
+        const mid = fx < 0.5 ? w + (k[4] - w) * fx * 2 : k[4] + (e - k[4]) * (fx * 2 - 1);
+        return [n, mid, s];
+    }
+
+    function heightInTile(k, fx, fy) {
+        if (isFlat(k)) return k[0];
+        const [n, mid, s] = edgeHeights(k, fx);
+        return fy < 0.5 ? n + (mid - n) * fy * 2 : mid + (s - mid) * (fy * 2 - 1);
+    }
+
+    // Ground height at world point (wx, wy).
+    function surfaceAt(m, wx, wy) {
+        const c = Math.floor(wx / TS), r = Math.floor(wy / TS);
+        if (!inMap(m, c, r)) return 0;
+        const fx = Math.min(1, Math.max(0, wx / TS - c)), fy = Math.min(1, Math.max(0, wy / TS - r));
+        return heightInTile(corners(m, c, r), fx, fy);
+    }
 
     // ------------------------------------------------------------------
     // Sprite helpers
@@ -69,13 +140,111 @@
         ctx.drawImage(img, sx, sy, TS, TS, x, y, TS, TS * (scaleY || 1));
     }
 
+    // Draws tile sprite n warped onto a sloped top with surface points k;
+    // (x, y) is the tile's ground-level position. In this view height only
+    // moves things up the screen, never sideways, so the warp is exact as 32
+    // one-pixel columns, each stretched from its north edge through its
+    // middle line to its south edge (two halves where the middle bends).
+    function drawQuadWarp(ctx, img, n, x, y, k) {
+        const cols = Math.floor(img.width / TS);
+        const sx = ((n - 1) % cols) * TS, sy = Math.floor((n - 1) / cols) * TS;
+        for (let u = 0; u < TS; u++) {
+            const [hn, hm, hs] = edgeHeights(k, (u + 0.5) / TS);
+            const top = y - Math.round(hn), mid = y + TS / 2 - Math.round(hm), bottom = y + TS - Math.round(hs);
+            if (Math.abs((mid - top) - (bottom - mid)) < 0.5) {
+                if (bottom > top) ctx.drawImage(img, sx + u, sy, 1, TS, x + u, top, 1, bottom - top);
+            } else {
+                if (mid > top) ctx.drawImage(img, sx + u, sy, 1, TS / 2, x + u, top, 1, mid - top);
+                if (bottom > mid) ctx.drawImage(img, sx + u, sy + TS / 2, 1, TS / 2, x + u, mid, 1, bottom - mid);
+            }
+        }
+    }
+
+    // Draws a tile layer flat or warped, whichever the surface needs.
+    function drawTop(ctx, img, n, x, y, k) {
+        if (isFlat(k)) drawQuad(ctx, img, n, x, y - k[0]);
+        else drawQuadWarp(ctx, img, n, x, y, k);
+    }
+
+    // Light / shade on sloped ground: a fixed light from the upper left
+    // (north-west, above), relative to flat ground (0 = flat, + = lit,
+    // - = shaded). The slope is measured at 3x3 points per tile (corners,
+    // edge midpoints, centre) by central differences that ignore samples
+    // across a cliff edge (like terrain:slopeAt in the game), and blended
+    // between them, so a hill shades smoothly.
+    const LIGHT = (() => { const v = [-0.55, -0.55, 1]; const l = Math.hypot(...v); return v.map(a => a / l); })();
+    const SLOPE_SAMPLE = 8;
+
+    function lightAt(m, c, r, k, fx, fy) {
+        const wx = (c + fx) * TS, wy = (r + fy) * TS;
+        const h0 = heightInTile(k, fx, fy);
+        const sample = (dx, dy) => {
+            const sx = fx + dx / TS, sy = fy + dy / TS;
+            return (sx >= 0 && sx <= 1 && sy >= 0 && sy <= 1) ? heightInTile(k, sx, sy) : surfaceAt(m, wx + dx, wy + dy);
+        };
+        const diff = (dx, dy) => {
+            const hp = sample(dx, dy), hm = sample(-dx, -dy);
+            const okP = Math.abs(hp - h0) < SLOPE_SAMPLE * 1.5, okM = Math.abs(h0 - hm) < SLOPE_SAMPLE * 1.5;
+            if (okP && okM) return (hp - hm) / (2 * SLOPE_SAMPLE);
+            if (okP) return (hp - h0) / SLOPE_SAMPLE;
+            if (okM) return (h0 - hm) / SLOPE_SAMPLE;
+            return 0;
+        };
+        const dhdx = diff(SLOPE_SAMPLE, 0), dhdy = diff(0, SLOPE_SAMPLE);
+        const len = Math.hypot(dhdx, dhdy, 1);
+        return (-dhdx * LIGHT[0] - dhdy * LIGHT[1] + LIGHT[2]) / len - LIGHT[2];
+    }
+
+    // Light value -> overlay colour.
+    function shadeColour(l) {
+        return l > 0 ? "rgba(255, 246, 215, " + Math.min(0.22, l * 0.9).toFixed(3) + ")"
+                     : "rgba(12, 22, 44, " + Math.min(0.45, -l * 1.4).toFixed(3) + ")";
+    }
+
+    // Does tile (c, r) or a neighbour slope? (Others need no shading.)
+    function nearSlope(m, c, r) {
+        for (let rr = r - 1; rr <= r + 1; rr++) for (let cc = c - 1; cc <= c + 1; cc++) {
+            if (inMap(m, cc, rr) && !isFlat(corners(m, cc, rr))) return true;
+        }
+        return false;
+    }
+
+    const SHADE_STEP = 2;   // px per shading column
+    function shadeSlope(ctx, m, c, r, x, y, k) {
+        if (!slopesOn || !nearSlope(m, c, r)) return;
+        // Light at the 3x3 points: L[j][i], i = west/middle/east, j = north/middle/south.
+        const L = [0, 1, 2].map(j => [0, 1, 2].map(i => lightAt(m, c, r, k, i / 2, j / 2)));
+        if (Math.max(...L.flat().map(Math.abs)) < 0.01) return;
+        const across = (row, f) => f < 0.5 ? row[0] + (row[1] - row[0]) * f * 2 : row[1] + (row[2] - row[1]) * (f * 2 - 1);
+        for (let u = 0; u < TS; u += SHADE_STEP) {
+            const f = (u + SHADE_STEP / 2) / TS;
+            const [hn, hm, hs] = edgeHeights(k, f);
+            const top = y - Math.round(hn), mid = y + TS / 2 - Math.round(hm), bottom = y + TS - Math.round(hs);
+            const ln = across(L[0], f), lm = across(L[1], f), ls = across(L[2], f);
+            for (const [y0, y1, a, b] of [[top, mid, ln, lm], [mid, bottom, lm, ls]]) {
+                if (y1 <= y0) continue;
+                if (Math.abs(a - b) < 0.005) {
+                    ctx.fillStyle = shadeColour(a);
+                } else {
+                    const g = ctx.createLinearGradient(0, y0, 0, y1);
+                    g.addColorStop(0, shadeColour(a));
+                    g.addColorStop(1, shadeColour(b));
+                    ctx.fillStyle = g;
+                }
+                ctx.fillRect(x + u, y0, SHADE_STEP, y1 - y0);
+            }
+        }
+    }
+
     // Grass top (grass.lua): +1 if the tile above is not lower, +2 right, +4 left.
+    // A lower neighbour joined by a slope isn't a drop, so it gets no edge.
     function grassQuad(m, c, r) {
-        const z = zAt(m, c, r);
+        const h = heightAt(m, c, r);
+        const noDrop = (cc, rr) => { const n = heightAt(m, cc, rr); return n >= h || joined(h, n); };
         let q = 1;
-        if (r > 0 && zAt(m, c, r - 1) <= z) q += 1;
-        if (c < m.width - 1 && zAt(m, c + 1, r) <= z) q += 2;
-        if (c > 0 && zAt(m, c - 1, r) <= z) q += 4;
+        if (r > 0 && noDrop(c, r - 1)) q += 1;
+        if (c < m.width - 1 && noDrop(c + 1, r)) q += 2;
+        if (c > 0 && noDrop(c - 1, r)) q += 4;
         return q;
     }
 
@@ -100,10 +269,30 @@
     }
 
     // Cliff / pit wall sprites (mountain.lua).
-    function drawWall(ctx, m, img, c, r, x, y) {
-        const top = heightAt(m, c, r);
+    // With slopes: no wall when the tile in front is joined to this one (the
+    // ground just slants down to it), and a sloped south edge clips the wall's
+    // top to match (k = this tile's corners).
+    function drawWall(ctx, m, img, c, r, x, y, k) {
+        const own = heightAt(m, c, r);
+        if (inMap(m, c, r + 1) && joined(own, heightAt(m, c, r + 1))) return;
         const bottom = faceBottom(m, c, r);
+        const sw = k ? k[2] : own, se = k ? k[3] : own;
+        const top = Math.max(sw, se);
         if (bottom >= top) return;
+        if (sw !== se) {
+            ctx.save();
+            ctx.beginPath();
+            ctx.moveTo(x, y + TS - sw); ctx.lineTo(x + TS, y + TS - se);
+            ctx.lineTo(x + TS, y + TS - bottom + 1); ctx.lineTo(x, y + TS - bottom + 1);
+            ctx.closePath(); ctx.clip();
+            drawWallSprites(ctx, m, img, c, r, x, y, top, bottom);
+            ctx.restore();
+        } else {
+            drawWallSprites(ctx, m, img, c, r, x, y, top, bottom);
+        }
+    }
+
+    function drawWallSprites(ctx, m, img, c, r, x, y, top, bottom) {
         const rows = (top - bottom) / TS;
         const covers = (cc, band) => {
             if (!inMap(m, cc, r)) return false;
@@ -129,6 +318,7 @@
     // Coordinates are world pixels; the caller sets up the transform.
     function drawHeightView(ctx, m, imgs, opts) {
         const { c0, c1, r0, r1 } = opts.range;
+        slopesOn = opts.slopes !== false;
         // Rows above / below the visible range whose content can reach into
         // view (tall cliffs, trees, pits sinking down).
         const maxH = opts.maxHeight, minH = opts.minHeight;
@@ -141,15 +331,24 @@
             for (let c = cStart; c <= cEnd; c++) {
                 const t = m.tiles[r][c], h = m.heights[r][c];
                 const x = c * TS, y = r * TS;      // tile at ground level
-                drawWall(ctx, m, imgs.land, c, r, x, y);
-                drawQuad(ctx, imgs.land, grassQuad(m, c, r), x, y - h);
-                if (isDirt(t)) drawQuad(ctx, imgs.land, dirtQuad(m, c, r), x, y - h);
-                if (t === 1) drawQuad(ctx, imgs.land, flourishQuad(c, r), x, y - h);
+                const k = corners(m, c, r);
+                drawWall(ctx, m, imgs.land, c, r, x, y, k);
+                drawTop(ctx, imgs.land, grassQuad(m, c, r), x, y, k);
+                if (isDirt(t)) drawTop(ctx, imgs.land, dirtQuad(m, c, r), x, y, k);
+                if (t === 1) drawTop(ctx, imgs.land, flourishQuad(c, r), x, y, k);
+                shadeSlope(ctx, m, c, r, x, y, k);
 
-                if (opts.showWater && m.water[r][c] > 0) drawWaterTile(ctx, x, y, h, m.water[r][c]);
+                // Things standing on the tile sit at the ground height under their base.
+                if (opts.showWater && m.water[r][c] > 0) drawWaterTile(ctx, x, y, Math.max(...k), m.water[r][c]);
 
-                if (isCrop(t)) sprites.push({ sortY: y + 24, draw: () => drawCrop(ctx, imgs, t, x, y - h) });
-                if (isTree(t)) sprites.push({ sortY: y + TREE_BASE_Y, draw: () => drawTree(ctx, imgs, t, x, y - h, opts.treeAlpha) });
+                if (isCrop(t)) {
+                    const hc = surfaceAt(m, x + 15, y + 27);
+                    sprites.push({ sortY: y + 24, draw: () => drawCrop(ctx, imgs, t, x, y - Math.round(hc)) });
+                }
+                if (isTree(t)) {
+                    const ht = surfaceAt(m, x + TREE_BASE_X, y + TREE_BASE_Y);
+                    sprites.push({ sortY: y + TREE_BASE_Y, draw: () => drawTree(ctx, imgs, t, x, y - Math.round(ht), opts.treeAlpha) });
+                }
             }
             if (opts.showObjects) {
                 for (const o of m.objects) {
@@ -202,7 +401,7 @@
     // Objects: pages use their art, the spawn shows the player, anything
     // else a labelled marker. `lifted` draws them at their ground height.
     function drawObject(ctx, imgs, m, o, lifted, selected) {
-        const h = lifted ? heightAt(m, Math.floor(o.x / TS), Math.floor((o.y - 4) / TS)) : 0;
+        const h = lifted ? Math.round(surfaceAt(m, o.x, o.y - 4)) : 0;
         const box = objectBox(m, o, lifted);
         if (o.type === "page") {
             ctx.drawImage(imgs.objects, 0, 0, 64, 64, o.x - 32, o.y - 64 - h, 64, 64);
@@ -222,7 +421,7 @@
 
     // The clickable rectangle of an object, in world pixels.
     function objectBox(m, o, lifted) {
-        const h = lifted ? heightAt(m, Math.floor(o.x / TS), Math.floor((o.y - 4) / TS)) : 0;
+        const h = lifted ? Math.round(surfaceAt(m, o.x, o.y - 4)) : 0;
         if (o.type === "page") return { x: o.x - 14, y: o.y - 60 - h, w: 28, h: 40 };
         if (o.type === "spawn") return { x: o.x + 2, y: o.y - 64 - h, w: 28, h: 64 };
         return { x: o.x - 8, y: o.y - 16 - h, w: 16, h: 16 };
@@ -323,9 +522,13 @@
             // A floating block is drawn in front of everything in its row.
             const b = m.blocks[r][c];
             if (b != null && wy >= r * TS - b - TS && wy < r * TS - b + TS) return { c, r, onBlock: true };
-            const h = m.heights[r][c];
-            const yTop = r * TS - h;
-            const yBottom = r * TS + TS - Math.min(h, faceBottom(m, c, r));
+            // The top's edges at this column (sloped tiles slant), then the
+            // wall below it unless the tile in front is joined by a slope.
+            const k = corners(m, c, r), f = (wx - c * TS) / TS;
+            const hN = k[0] + (k[1] - k[0]) * f, hS = k[2] + (k[3] - k[2]) * f;
+            const yTop = r * TS - hN;
+            const front = inMap(m, c, r + 1) && joined(m.heights[r][c], m.heights[r + 1][c]);
+            const yBottom = r * TS + TS - (front ? hS : Math.min(hS, faceBottom(m, c, r)));
             if (wy >= yTop && wy < yBottom) return { c, r };
         }
         return null;
@@ -334,6 +537,6 @@
     root.MapRender = {
         TS, TILE_TYPES, typeName, isTree, isCrop, TREES,
         drawHeightView, drawFlatView, drawCrop, drawTree, drawQuad,
-        pickFlat, pickHeight, objectBox, heightAt,
+        pickFlat, pickHeight, objectBox, heightAt, surfaceAt, corners, SLOPE_LIMIT,
     };
 })(window);
