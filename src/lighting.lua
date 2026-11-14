@@ -17,6 +17,7 @@ local sprites = require("src.sprites")
 local sun = require("src.sun")
 local terrain = require("src.terrain")
 local water = require("src.water")
+local weather = require("src.weather")
 
 lighting.lampRadius = 100     -- px, how far the player's lamp reaches
 lighting.lampHeight = 24      -- px above the player's feet (roughly hand height)
@@ -62,7 +63,7 @@ lighting.lamp = { x = 0, y = 0, z = 0, radius = lighting.lampRadius }
 
 -- Call once at the start of love.draw, before any sprites are drawn.
 function lighting:begin()
-    self.sun = sun:getState()
+    self.sun = weather:overcast(sun:getState())   -- rain dims the sun (and its shadows)
 
     -- Pit focus: on while the ground under him is below ground level. When he
     -- climbs out, keep the old level until the effect has faded away.
@@ -188,6 +189,15 @@ function lighting:composite(cameraX, cameraY)
 
     -- For water reflections: the ground tiles alone, and the player's feet
     -- (world y) so he can be reflected.
+    send(s, "weatherAmount", weather.amount)
+    send(s, "lightningFlash", weather.flash)
+    send(s, "fogAmount", weather.fog)
+    send(s, "fogDrift", weather.fogDrift)
+    send(s, "spriteHeightMap", canvas.spriteHeight)
+    send(s, "playerFeetScreenY", feetScreenY)
+    send(s, "playerFeetHeight", -player.drawZ)
+    send(s, "weatherTint", weather.tint)
+    send(s, "weatherDesaturate", weather.desaturate)
     send(s, "groundCanvas", canvas.offscreen)
     send(s, "playerFeetY", player.drawY - 4)
     send(s, "waterReflections", true)

@@ -86,6 +86,38 @@ uniform Image groundCanvas;
 uniform float playerFeetY;
 uniform bool  waterReflections;
 
+// Weather (see weather.lua): 0 = clear, 1 = full rain. Rain tints the whole
+// frame darker blue-grey and drains some colour. (0 in the web build.)
+uniform float weatherAmount;
+uniform vec3  weatherTint;
+uniform float weatherDesaturate;
+uniform float lightningFlash;    // 0..1 while lightning lights up the scene
+
+// Fog (see weather.lua): 0 = none, 1 = full. It pools in low ground: the
+// lower a pixel's terrain, the thicker the fog over it.
+uniform float fogAmount;
+uniform vec2  fogDrift;          // how far the wisps have drifted (px)
+// Sprite pixels count as high as they really are: trees from
+// spriteHeightMap (R = height / heightRange, A = 1 on tree pixels, see
+// treeHeightShader.glsl), the player from his feet up.
+uniform Image spriteHeightMap;
+uniform float playerFeetScreenY;
+uniform float playerFeetHeight;
+const vec3  FOG_COLOUR = vec3(0.80, 0.84, 0.88);
+const float FOG_TOP  = 40.0;     // px: well above this, no fog but the haze
+const float FOG_FADE = 80.0;     // px over which it thickens below FOG_TOP
+const float FOG_HAZE = 0.16;     // thin haze over everything
+const float FOG_MAX  = 1.0;     // thickest it gets (never quite opaque)
+
+// How thick the fog is over world point p (0..FOG_MAX).
+float fogDensity(vec3 p) {
+    float low = clamp((FOG_TOP - p.z) / FOG_FADE, 0.0, 1.0);
+    float scale = cloudTexelSize * cloudSize;
+    float wisp = Texel(cloudMap, (p.xy + fogDrift) / (scale * 0.35)).r * 0.6
+               + Texel(cloudMap, (p.xy - fogDrift * 0.6) / (scale * 0.15)).r * 0.4;
+    return clamp(FOG_HAZE + low * (0.25 + 0.75 * wisp), 0.0, FOG_MAX);
+}
+
 // Colour grading LUT: 32 blue slices of 32x32 (red across, green up), and
 // several 32-row blocks stacked vertically for different times of day.
 uniform Image lutImage;
@@ -474,6 +506,46 @@ vec4 effect(vec4 color, Image texture, vec2 uv, vec2 screenPx) {
     if (!revealed && ghostOpacity > 0.0 && xray.a > 0.5 && objectPixel.a < 0.5) {
         vec4 ghost = finishPlayer(xray, screenPx);
         result.rgb = mix(result.rgb, ghost.rgb, ghostOpacity * xray.a);
+    }
+
+    // FOG: by the height of what's at this pixel, terrain and sprites alike
+    // (a tree pixel 100 px up the canopy is as clear of fog as a cliff pixel
+    // 100 px up a mountain).
+    // A sprite pixel that's only partly opaque (soft edges: about a quarter
+    // of a pine's pixels) is a blend of sprite and ground, so its fog is too:
+    // mixed by its opacity. (Fogging it by the ground alone gave trees a
+    // whitish film.)
+    if (fogAmount > 0.0) {
+        bool fogFace;
+        vec3 fp = surfacePoint(screenPx, fogFace);
+        float density = fogDensity(fp);                       // the ground here
+        if (objectPixel.a > 0.0) {
+            vec3 sp = fp;
+            if (xray.a > 0.5) {
+                sp.z = playerFeetHeight + max(0.0, playerFeetScreenY - screenPx.y);
+            } else {
+                vec4 sh = Texel(spriteHeightMap, uv);
+                // Other sprites (grass clumps, crops, pages, dust) are small and
+                // low: count them as about 10 px up, so they sit in the fog.
+                sp.z = sh.a > 0.5 ? sh.r * heightRange : fp.z + 10.0;
+            }
+            density = mix(density, fogDensity(sp), objectPixel.a);
+        }
+        vec3 fogCol = colourGrade(vec4(FOG_COLOUR, 1.0)).rgb;   // follows the time of day
+        result.rgb = mix(result.rgb, fogCol, density * fogAmount);
+    }
+
+    // WEATHER: a rainy day is greyer, darker and bluer.
+    if (weatherAmount > 0.0) {
+        float grey = dot(result.rgb, vec3(0.299, 0.587, 0.114));
+        vec3 rainy = mix(result.rgb, vec3(grey), weatherDesaturate) * weatherTint;
+        result.rgb = mix(result.rgb, rainy, weatherAmount);
+    }
+    // LIGHTNING: everything lights up with a cold white-blue glare, darker
+    // things lifted more (so even night shows for an instant).
+    if (lightningFlash > 0.0) {
+        vec3 glare = result.rgb * 1.2 + vec3(0.30, 0.34, 0.42);
+        result.rgb = mix(result.rgb, glare, lightningFlash * 0.85);
     }
     return result;
 }

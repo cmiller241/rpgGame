@@ -35,6 +35,10 @@ function canvas:initialize(cWidth, cHeight)
     canvas.focus        = love.graphics.newCanvas(cWidth, cHeight)
     canvas.focusSurface = love.graphics.newCanvas(cWidth, cHeight, { format = surfaceFormat })
     canvas.focusSurface:setFilter("nearest", "nearest")
+    -- Height (px / terrain.heightRange, in R) of every tree pixel, for fog
+    -- (see treeHeightShader.glsl); alpha 0 where there's no tree.
+    canvas.spriteHeight = love.graphics.newCanvas(cWidth, cHeight, { format = surfaceFormat })
+    canvas.spriteHeight:setFilter("nearest", "nearest")
 
     canvas.showSurfaceMap = canvas.showSurfaceMap or false
     -- Linear on purpose: pixelScaleShader relies on it to blend only the
@@ -47,7 +51,7 @@ end
 -- terrain draws them.)
 function canvas:clear()
     for _, c in ipairs({canvas.object, canvas.shadow, canvas.offscreen, canvas.intermediate,
-                        canvas.temp, canvas.xray, canvas.focus}) do
+                        canvas.temp, canvas.xray, canvas.focus, canvas.spriteHeight}) do
         love.graphics.setCanvas(c)
         love.graphics.clear(0, 0, 0, 0)
     end

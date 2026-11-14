@@ -53,6 +53,8 @@ local message      = require("src.message")
 local devtools     = require("src.devtools")
 local tallGrass    = require("src.tallgrass")
 local pageSparkles = require("src.pagesparkles")
+local weather      = require("src.weather")
+local tree         = require("src.tree")
 local ambient      = require("src.ambient")   -- dust, ripples, fireflies
 
 local appWidth, appHeight
@@ -106,8 +108,10 @@ function love.keypressed(key)
         view:step(1, appWidth, appHeight)    -- zoom in one level
     elseif key == "x" then
         view:step(-1, appWidth, appHeight)   -- zoom out one level
-    elseif key == "a" or key == "s" or key == "r" then
-        ui:keypressed(key)
+    elseif key == "a" or key == "s" or key == "t" then
+        ui:keypressed(key)          -- A/S choose a toolbar slot, T hides/shows the toolbar
+    elseif key == "r" then
+        weather:toggle()            -- sunny -> rain -> fog -> sunny
     else
         player:keypressed(key)
     end
@@ -153,6 +157,7 @@ function love.update(dt)
         water:update(fixedDt)   -- water flows (sleeps once settled) and slowly evaporates
         tallGrass:update(fixedDt)   -- grass parting around the player, cut-grass bits
         ambient:update(fixedDt)     -- dust, ripples, fireflies
+        weather:update(fixedDt)     -- rain
 
         -- Update object animations
         for _, obj in ipairs(object.objects) do
@@ -346,6 +351,9 @@ function love.draw()
         drawItems(true)
     end
 
+    -- In fog: the trees' pixel heights, so canopies rise out of it.
+    tree:drawHeights()
+
     -- Bits of cut grass fly over everything.
     tallGrass:drawParticles(cameraX, cameraY)
 
@@ -364,6 +372,7 @@ function love.draw()
     lighting:composite(cameraX, cameraY)
     pageSparkles:draw(cameraX, cameraY)    -- motes of light around the pages (glow, so after lighting)
     ambient:drawGlow(cameraX, cameraY)     -- fireflies
+    weather:draw(cameraX, cameraY)         -- falling rain, over everything
 
     -- Debug (C key): overlay the surface map.
     if canvas.showSurfaceMap then

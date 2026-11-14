@@ -16,6 +16,7 @@ local camera = require("src.camera")
 local canvas = require("src.canvas")
 local shader = require("src.shader")
 local sun = require("src.sun")
+local weather = require("src.weather")
 local terrain = require("src.terrain")
 local window = require("src.window")
 
@@ -54,7 +55,8 @@ end
 -- Fixed-timestep update.
 function fireflies:update(dt)
     local night = sun:getState().night or 0
-    local want = math.floor(MAX * math.max(0, math.min(1, (night - NIGHT_START) / (1 - NIGHT_START))) + 0.5)
+    local want = math.floor(MAX * math.max(0, math.min(1, (night - NIGHT_START) / (1 - NIGHT_START)))
+                            * (1 - weather.amount) + 0.5)          -- they hide from the rain
     while #flies < want do spawn() end
     while #flies > want do table.remove(flies) end
 

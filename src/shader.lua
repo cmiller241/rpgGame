@@ -25,6 +25,7 @@ shader.ultimate      = load("shaders/ultimateShader.glsl", true)      -- final l
 shader.spriteShadow  = load("shaders/spriteShadowShader.glsl", true)  -- shadows cast by sprites
 shader.surfaceDebug  = load("shaders/surfaceDebugShader.glsl")        -- C key: show surface map
 shader.windSway      = load("shaders/windSwayShader.glsl")            -- tree canopy sway
+shader.treeHeight    = load("shaders/treeHeightShader.glsl")          -- height of each tree pixel (fog)
 shader.outline       = load("shaders/outlineShader.glsl")             -- highlight on pickups
 shader.sparkle       = load("shaders/sparkleShader.glsl")             -- motes of light around pages
 shader.dust          = load("shaders/dustShader.glsl")                -- dust puffs at the player's feet

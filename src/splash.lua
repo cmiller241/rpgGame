@@ -52,6 +52,11 @@ local function ring(x, y, z, size, life)
     rings[#rings + 1] = { x = x, y = y, z = z, size = size, age = 0, life = life }
 end
 
+-- A ripple ring on the water at (x, y), surface height z (e.g. a raindrop).
+function splash:ring(x, y, z, size, life)
+    if #rings < 120 then ring(x, y, z, size, life) end
+end
+
 -- A splash at (x, y) on the water surface z: droplets and a big ring.
 function splash:splash(x, y, z, strength)
     strength = strength or 1

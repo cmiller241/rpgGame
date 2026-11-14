@@ -12,6 +12,10 @@ local player = require("src.player")
 local shader = require("src.shader")
 local spriteShadow = require("src.spriteShadow")
 local sprites = require("src.sprites")
+local terrain = require("src.terrain")
+local weather = require("src.weather")
+
+local heightQueue = {}   -- trees drawn this frame, for the fog height pass
 
 -- Per kind: which quad, and the point in that quad (anchorX, anchorY) where
 -- the tree meets the ground. That point is placed at BASE_IN_TILE inside the
@@ -88,6 +92,7 @@ function tree:addSprites(list, kind, xC, yC, z, screenX, screenY)
         owner = self, caster = caster, kind = k, swayPx = swayPx, key = xC .. "," .. yC,
         sortY = screenY + BASE_IN_TILE_Y, sortX = screenX,
         drawX = screenX + BASE_IN_TILE_X, drawY = screenY + BASE_IN_TILE_Y + z,
+        baseZ = baseZ,
         tintX = baseX, tintY = baseY, tintZ = baseZ + TINT_SAMPLE_HEIGHT,
     }
 end
@@ -107,7 +112,42 @@ function tree:drawItem(item, tint)
     s:send("anchorV", SWAY_ANCHOR_V)
     love.graphics.setColor(tint, tint, tint, fadeAlpha(item))
     love.graphics.draw(sprites.tree, k.quad, item.drawX, item.drawY, 0, 1, 1, k.anchorX, k.anchorY)
+
     love.graphics.setColor(1, 1, 1, 1)
+    love.graphics.setShader()
+
+    -- Queue it for the height pass (fog only): see tree:drawHeights.
+    if weather.fog > 0 then heightQueue[#heightQueue + 1] = item end
+end
+
+-- FOG HEIGHTS
+-- In fog, each tree pixel is fogged by its real height (the trunk stands in
+-- the fog, the canopy rises out of it). The trees drawn this frame are
+-- drawn again, in the same order, as the height of each of their pixels
+-- into canvas.spriteHeight (treeHeightShader.glsl). Done all at once after
+-- the sprites, so it's one canvas switch rather than two per tree.
+function tree:drawHeights()
+    if #heightQueue == 0 then return end
+    local h = shader.treeHeight
+    local texW, texH = sprites.tree:getDimensions()
+    love.graphics.setCanvas(canvas.spriteHeight)
+    love.graphics.setShader(h)
+    love.graphics.setBlendMode("replace")
+    love.graphics.setColor(1, 1, 1, 1)
+    shader.sendIfPresent(h, "heightRange", terrain.heightRange)
+    for i, item in ipairs(heightQueue) do
+        local k = item.kind
+        local _, qy, _, qh = k.quad:getViewport()
+        h:send("sway", item.swayPx / texW)
+        h:send("quadV0", qy / texH)
+        h:send("quadV1", (qy + qh) / texH)
+        h:send("anchorV", SWAY_ANCHOR_V)
+        shader.sendIfPresent(h, "baseHeight", item.baseZ)
+        shader.sendIfPresent(h, "baseScreenY", item.drawY)
+        love.graphics.draw(sprites.tree, k.quad, item.drawX, item.drawY, 0, 1, 1, k.anchorX, k.anchorY)
+        heightQueue[i] = nil
+    end
+    love.graphics.setBlendMode("alpha")
     love.graphics.setShader()
 end
 

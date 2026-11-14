@@ -35,7 +35,7 @@ Time of day lives in `src/sun.lua` (`sun.angle`: 0 = sunrise, 90 = noon, 180 = s
 - `src/tiles.lua` defines every tile type: what is drawn on it, what sprite stands on it, and what part of it is solid. Add a tile type there.
 - Maps: `love .` plays `maps/map01.lua`; `love . --map NAME` plays `maps/NAME.lua`. `maps/test.lua` is a fixed copy the dev tools and tests are built around (`--shots` and `--bench` use it automatically, `--test-map` picks it otherwise), so map01 can be edited freely.
 - `love . --shots` renders a set of fixed scenes (sun angle, position, zoom) to PNGs plus a contact sheet. `love . --bench` prints the frame time for each scene. Both are defined in `src/devtools.lua` and write to the LÖVE save directory.
-- Keys: arrows move, Space jumps, F uses a tool or picks up a page, Q / Shift+Q raise / lower the outlined tile (Ctrl+Q / Ctrl+Shift+Q in 8 px steps, which make slopes), W pours water on it, E places / removes a floating block over it (Hoe selected), A/S choose a toolbar slot, Z/X zoom, M/N scrub the time of day, C shows the surface map.
+- Keys: arrows move, Space jumps, F uses a tool or picks up a page, Q / Shift+Q raise / lower the outlined tile (Ctrl+Q / Ctrl+Shift+Q in 8 px steps, which make slopes), W pours water on it, E places / removes a floating block over it (Hoe selected), A/S choose a toolbar slot, T hides / shows the toolbar, R cycles the weather (sunny, rain, fog), Z/X zoom, M/N scrub the time of day, C shows the surface map.
 
 ## Browser Version
 The game also runs in a browser: `js/` is a JavaScript port of the Lua code, running on a small re-implementation of the LÖVE API (`js/love/`, from Asteroid Bob's web port) drawn with WebGL2.

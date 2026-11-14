@@ -22,6 +22,7 @@ local shader = require("src.shader")
 local sprites = require("src.sprites")
 local terrain = require("src.terrain")
 local water = require("src.water")
+local weather = require("src.weather")
 
 local STEP_TIME = 0.12            -- seconds between footsteps while walking
 local PUFFS_PER_STEP = 2          -- puffs kicked up by each footstep
@@ -60,7 +61,7 @@ function dust:update(dt)
     lastX, lastY = player.x, player.y
 
     local onGround = player.isOnGround
-    local wet = water:depthAtFeet(fx, player.y - 4, -player.z) > 0
+    local wet = water:depthAtFeet(fx, player.y - 4, -player.z) > 0 or weather.amount > 0.5   -- rain: wet ground
 
     if player.state == "Walking" and onGround and moved and not wet then
         stepTimer = stepTimer + dt

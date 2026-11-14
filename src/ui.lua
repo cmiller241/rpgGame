@@ -143,7 +143,7 @@ function ui:keypressed(key)
         self.highlightedSlot = math.max(1, self.highlightedSlot - 1)
     elseif key == "s" then
         self.highlightedSlot = math.min(10, self.highlightedSlot + 1)
-    elseif key == "r" then
+    elseif key == "t" then
         self.isVisible = not self.isVisible
         if self.isVisible then
             -- Show: animate back to original position
